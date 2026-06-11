@@ -110,9 +110,14 @@ feedback comes in chat; the two-frame test is the agent-side acceptance only.
       top-10 logged + top-3 fixed, DEVIATIONS D-5. Shadow regression user-reported and FIXED
       (blobby/flicker/circle — see gotchas). Carried: geometric wall plants, moss volume geo,
       noon-dapple gap-framing re-judge, perf 50–151 ms GPU veg-heavy (Phase 7).
-- [ ] **Phase 6** — stream water (refraction/caustics/foam/wet margins), lakes (planar refl),
-      hierarchical wind, froxel volumetrics (canopy shafts, valley fog), GPU particles
-      (snow/pollen/leaves). Gate: streambed close-up vs scene1/2.
+- [x] **Phase 6** — BUILT 2026-06-12, all six systems live + verified (gate notes below):
+      stream/lake water (clipmap + SSR + caustics + wet margins + strict hydrology),
+      hierarchical wind (trees/understory/grass + shadows), froxel volumetrics (canopy
+      shafts + valley fog), GPU particles (131k snow/pollen/leaves), weather motion
+      (clouds drift+churn, shadow map follows). Lakes use SSR (spec: "SSR or planar");
+      planar pass logged as optional polish. Gate DELTA written (docs/DELTA.md Phase 6):
+      motion checks PASSED, remaining items are art-direction/composition (fg boulders,
+      wall-veg density, overhang framing) folded into Phase 7's composed-bookmark pass.
 - [ ] **Phase 7** — perf pass (60fps@1440p / reduced preset), HUD full (per-pass GPU timings),
       9 bookmarks, 90s flythrough, full battery, final two-frame test, self-score rubric.
 - [ ] **Tier 3** — only after battery passes (see spec §11).
@@ -191,49 +196,62 @@ cov 0.62), contact shadows (?ablate=contact to A/B), black facets root-caused to
 
 ## Next actions (always keep current)
 
-- **PHASE 6 — water, wind, volumetrics, particles (task #7 in_progress).**
-  (1) STREAM WATER v1 LANDED (commit pending tag): WaterSurface 6-level
-  clipmap (shared 128² grid, world-pos vertex from waterY f32 buffer,
-  inner-rect fragment cutout, min-reduced far field, world-bounds mask) +
-  WaterMaterial (viewportSharedTexture refraction w/ depth-validated uv,
-  Beer–Lambert absorption, SSR reflections w/ canopy-attenuated sky
-  fallback, two-phase flowmap ripples from fbm gradients, slope-keyed
-  rapid foam + shore foam, depth-feathered shoreline). Hydrology:
-  waterYRaw in carve kernel (ponds at FILL level W — flat; rivers at
-  bed+gated depth; slope-gated: steep reaches dry), SPLIT thresholds
-  (RIVER_T 14 carve/moisture unchanged; WATER_T +220 visible water only),
-  flowDir = dir × speed (0 in lakes). User-confirmed fixed LIVE: water
-  spikes, far half-flooded mountains, border sheets, foam stripes, foam
-  loop seam (detail octave moved inside the two-phase blend + variance
-  renorm, commit "FIX: foam loop seam"), flow motion "looks good now".
-  REMAINING for stream-water close: caustics on submerged beds, gate
-  shots vs scene1/2 (streambed close-up), underwater camera guard maybe,
-  WATER_T fine-tune if user flags. Deadfall winding/caps fixed+confirmed
-  (1a80f86). THEN: lakes planar reflection → hierarchical wind (user is
-  waiting on animated trees) → froxels → particles.
-  (2) LAKES: planar reflection at LAKE_LEVEL (one clip-plane pass) +
-  shore blend.
-  (3) HIERARCHICAL WIND: trunk sway (low-freq) + branch/card flutter
-  (per-instance phase from slot hash) + grass bend (GroundRing positionNode)
-  — one global wind uniform field (dir + gust fbm), amplitude by exposure
-  (canopy map). (4) FROXEL VOLUMETRICS: canopy light shafts + valley fog
-  (froxel grid, sun shadow-map gated, probe-ambient in-scatter). (5) GPU
-  PARTICLES ≥100k: pollen/leaves/snow by biome+season-of-day, wind-advected,
-  simple compute integrate + instanced quads. (6) Carried Ph-2: 2nd cloud
-  layer + god rays (froxels may cover). Gate: streambed close-up vs
-  scene1/scene2 + golden-hour wind motion check + particle density floor.
-- Phase 5 carried debts (do NOT re-open the phase; fold into 6/7 where
-  natural): geometric wall plants (wall-veg scatter class), moss volume
-  geometry, per-cluster LOD for hero rocks/trunks if close-ups demand,
-  noon-dapple re-judge at a canopy GAP framing (crown proxies landed —
-  expect pools now), debris-floor interpretation (caps 220k; visible max
-  measured ~19k at bed framings — revisit at Phase-6 streambed gate),
-  distant-forest felt at vistas (impostor/shell uniformity).
-- Perf watch (Phase 7 owns): 50–151 ms GPU at veg/grass-heavy 1080p views
-  (grass tuft band + caster draws added); timestamp-query overflow warning
-  (HUD GPU timings undercount — cosmetic; resolveTimestampsAsync batching).
-- PENDING USER CONFIRM: shadow flicker gone live (world-anchored dither) —
-  confirmed fixed for blobs/circle; flicker check outstanding.
+- **PHASE 6 COMPLETE (2026-06-12, commits eef662f..51aba85) — all six
+  systems built, verified by shots, gate DELTA written.** What landed
+  this session (beyond the user-confirmed water v1):
+  (a) CAUSTICS: per-frame analytic bake (7 integer-lattice gravity waves,
+  closed-form inverse-Jacobian — Caustics.ts), sampled by terrain + rocks
+  + debris albedo w/ sun-refraction parallax, flow advection, depth
+  defocus; wet waterline fringe + submerged biofilm/algae darkening;
+  underwater camera guard (cpuWaterY mirror); ?caustk/?view=caust(2)/
+  ?caustlit probes; tools/find-water.ts finds shallow framings from the
+  CPU hydrology mirrors.
+  (b) WATER LOOK FIXES: fresnel on FLATTENED normal (ripple-steep normals
+  saturated Schlick → every stream mirrored noon sky as a white sheet —
+  ?waterdbg=1..6 ladder diagnosed it); ripple amp to physical range; SSR
+  miss fallback now terrain-horizon-tested (4 nearest height probes) w/
+  probe-GI irradiance toward the ray (gorge water reflects WALLS); foam
+  keyed to ≥3% grade steps; STRICT HYDROLOGY (user mandate): WATER_T
+  220→320, rSurf sat 1.5/pow 2.2/cap 1.5 m — water only in channel cores,
+  washes stay dry cobbled scars (shots/phase-6/aerial-strict.png).
+  (c) BANK/BED DRESSING: grass/debris gates moved off the blurred
+  riverDepth apron onto the ACTUAL water surface (gorge floors regrew),
+  channel-scar grass thinning, cobbles persist through ≤0.55 m water,
+  submerged organics float off, cobble-core boost.
+  (d) HIERARCHICAL WIND (Wind.ts): gust fronts = 2 advected fbm octaves;
+  whole-plant sway scaled by BAKED vdata.y flex + 3–5 Hz flutter via
+  vdata.z phase (fades by 220 m); shadows share the node; trees+understory
+  sway, deadfall/stones/proxies rigid (cls<15); grass tip² cantilever in
+  GroundRing; canopy map = shelter. ?wind/?winddir/?ablate=wind.
+  (e) FROXELS (Froxels.ts): 160×90×64 grid → scatter (height fog +
+  moisture + wind billows; sun vis = terrain horizon march × canopy
+  crown-band pierce × cloud shadow; HG g=0.5) + per-column closed-form
+  integrate → 3D LUT composited BEFORE aerial. Dawn lake mist + glow
+  verified. ?fog/?ablate=froxels.
+  (f) PARTICLES (Particles.ts): 131,072 (floor 100k ✓) in ±36/±24 m
+  camera box; type re-rolls from environment (snow biome / canopy leaves /
+  pollen); lit quads + probe-GI ambient; ?partdbg=1/2.
+  (g) WEATHER MOTION: cloud field translates downwind 22 m/s, detail
+  churns at 1.35×; shadow map re-bakes every 2.5 s w/ residual-drift
+  lookup; world-time driven (freeze-deterministic).
+  Lakes: SSR satisfies spec ("SSR or planar"); planar pass = optional
+  polish if user flags lake reflections.
+- **NEXT: PHASE 7 (task #8)** — perf pass (60fps@1440p / reduced preset;
+  current ~25–45 ms GPU at 1080p mixed framings), HUD per-pass GPU
+  timings (fix timestamp-query overflow warning), 9 composed bookmarks
+  (fold in the gate's art-direction deltas: fg hero boulders, overhang
+  framing, wall-veg density, shallow-trickle reach for the final
+  two-frame test — see DELTA.md Phase 6 top-10), 90 s flythrough, full
+  verification battery, final two-frame test, self-score rubric.
+- Phase 5/6 carried debts (fold into 7 where natural): geometric wall
+  plants, moss volume geometry, noon-dapple gap re-judge, impostor depth
+  parallax (D-4), distant-forest felt at vistas, 2nd cloud layer + god
+  rays (froxel shafts partially cover; judge at golden-hour bookmarks),
+  lake planar reflections (optional).
+- PENDING USER CONFIRM: water look after fresnel/strict-hydrology rework
+  (esp. river width/coverage now matching their "too much water" ask);
+  wind feel (amplitude/speed live); fog density taste (?fog=N); particle
+  visibility. Shadow-flicker live check still outstanding from Phase 5.
 
 ## Key decisions log
 
@@ -462,3 +480,27 @@ split view, ground-clamped camera helper, silhouette/tiling gate + DELTA.md.
   sheet — hard world-bounds mask in the material; (c) animated foam must
   advect with the TWO-PHASE flowmap like the normals — linear time
   advection slides thresholded fbm level sets into hard white stripes.
+- Water fresnel MUST use a flattened normal (n.xz × ~0.3): per-pixel
+  ripple tilt explodes (1−cosθ)^5 at ANY view angle → 100% sky mirror =
+  "white sheet over every stream". Ripples shape WHAT reflects (rdir),
+  the MEAN surface decides HOW MUCH. Debug ladder ?waterdbg=1..6.
+- SSR sky fallback must be terrain-horizon-tested: a gorge stream "sees"
+  walls in its mirror, not open sky — 4 nearest height probes along the
+  reflected ray + probe-GI irradiance toward the ray as the occluded
+  fallback (the probe field already knows wall/canopy brightness).
+- Veg/debris water gating must key on the ACTUAL water surface (waterY),
+  never the riverDepth apron (widen-blurred ~0.12 m floor flags whole
+  gorge floors "river" → bald banks). Generous ≥0.25 m thresholds only
+  apply to W−h comparisons (sim-res interpolation), not waterY−h.
+- Per-frame StorageTexture mips DO auto-regenerate after renderer.compute
+  (mipmapsAutoUpdate default) — .bias() depth-defocus on the caustic tile
+  works; verify mips with a forced-bias debug view before trusting them.
+- AUTO-EXPOSURE eats naive emissive debug probes: a 131k-quad emissive-40
+  wall crushed the whole scene black and read as "particles broken" — when
+  a debug overlay must be judged, render it DIM (≤2) or kill exposure
+  (?cloudview-style NoToneMapping path), and remember transparent quads
+  behind water depth-fail (water writes depth).
+- TSL `time` is NOT frozen by ?freeze=1 (only engine worldTime is): two
+  shots with different --settle counts sample different wind/water phases
+  — that's the cheap motion A/B; anything that must stay deterministic
+  per-shot (cloud drift) must run on WORLD time via a CPU uniform.

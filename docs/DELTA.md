@@ -199,3 +199,43 @@ Top deltas to close at phase gate (after wind/volumetrics/particles land):
 5. Dark overhang top-frame (value structure: dark frame → lit mid →
    luminous bg) — composition choice at gate time.
 6. Motion: wind sway + drifting particles missing (next workstreams).
+
+## Phase 6 gate (2026-06-12) — streambed close-up vs scene1/2 + motion checks
+
+Gate artifacts: shots/phase-6/ (cmp-gate-scene1.png = gate-c2 vs scene1).
+Motion checks PASSED: wind two-phase diff (wind-diff.png — trunk core
+static, branches/cards/grass displaced, hierarchy correct); clouds evolve
+(111k px cloud-region change over ~6 s); particles 131,072 ≥ 100k floor.
+Water user-confirmed live (previous session) + this session's physics
+fixes (fresnel, reflections, foam, strict hydrology per user mandate).
+
+Ten most significant deltas vs scene1/2 at the gate framing (gate-c2):
+1. No foreground hero boulders breaking the run (ref: 1–2 m mossy rounded
+   boulders anchor the frame) — river-boulder affinity places few at this
+   reach; needs a margin-boulder density boost or framing at a boulder.
+2. Walls read pale karst w/ green ledge bands; ref walls are heavily clad
+   in dark green (carried: geometric wall plants / wall-veg scatter class).
+3. No dark overhang top-frame (ref value structure: dark frame → lit mid
+   → luminous bg). Compositional; needs an undercut reach or fg occluder.
+4. Bed cobbles read at margins but not THROUGH the main run (this reach
+   runs deep/foamy; ref trickle shows cobbles under clear inches) — find
+   a shallower reach for the final two-frame test, or accept as variant.
+5. No deadfall logs across the run at this reach (scene2's anchor).
+6. Ref furniture scale: their stream is ~2–4 m wide; ours ~8 m here —
+   stricter WATER_T helped enormously (aerial-strict.png); headwater
+   reaches now read as trickles, pick one for the final frame.
+7. Foam streaks slightly synthetic at glancing (two-phase blend visible
+   as soft cells when the run is uniform; acceptable in motion).
+8. Mid-distance karst towers behind the gorge are bare-ish at this yaw
+   (vegetated-tower read of scene1 bg) — biome/zone dependent, framing.
+9. Caustics read in shallow stills (caustics-stream1.png) but are subtle
+   through foam at this reach — correct physics, just masked here.
+10. Wall GI: shadowed wall bases could carry slightly more green bounce
+    (ref's shaded rock is distinctly green-tinged from the canopy).
+
+Top-3 actioned this loop: #6 strict hydrology (WATER_T 320 + sharper
+rSurf — the single biggest compositional win, user-mandated), #2 partial
+(wall greening bands + gorge-floor grass-to-the-waterline rework), #1/#3
+deferred to the Phase-7 composed-bookmark pass WITH the user's eye (the
+remaining items are art-direction/framing, not missing systems — all six
+Phase-6 systems are live and verified).
