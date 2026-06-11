@@ -65,6 +65,8 @@ export interface TerrainShading {
   colorNode: NV3;
   normalNode: NV3;
   roughnessNode: NF;
+  /** final shading normal in WORLD space (for probe irradiance) */
+  worldNormalNode: NV3;
 }
 
 const uvFromWorld = (p: NV2): NV2 => p.div(WORLD_SIZE).add(0.5);
@@ -278,5 +280,6 @@ export function buildTerrainShading(inp: TerrainShadingInputs): TerrainShading {
     colorNode: col,
     normalNode: transformNormalToView(nrm),
     roughnessNode: rough,
+    worldNormalNode: nrm,
   };
 }

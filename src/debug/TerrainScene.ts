@@ -7,6 +7,7 @@
  * ?alt=N puts the camera N meters above ground (ground-clamped spawn).
  */
 
+import { ProbeGI } from '../gpu/passes/ProbeGI';
 import { Heightfield } from '../world/Heightfield';
 import { TerrainTiles } from '../world/TerrainTiles';
 import { PostStack } from '../render/PostStack';
@@ -35,7 +36,20 @@ export async function buildTerrainScene(ctx: WorldContext): Promise<void> {
     engine.stats.counters['terrain.maxH'] = Math.round(maxH);
   }
 
-  ctx.progress(0.94, 'terrain: building tiles');
+  // physical sky first: probe gathering needs the atmosphere LUTs
+  ctx.progress(0.93, 'sky: baking atmosphere LUTs');
+  const sunSky = new SunSky(engine, params.timeOfDay);
+  await sunSky.init(engine.renderer);
+  (engine as unknown as { sunSky?: SunSky }).sunSky = sunSky;
+
+  // irradiance probe field (Phase 3 GI)
+  ctx.progress(0.945, 'gi: gathering irradiance probes');
+  const gi = new ProbeGI(hf, sunSky.atmosphere);
+  await gi.init(engine.renderer);
+  sunSky.dimAmbientForGI();
+  engine.onUpdate(() => gi.tick(engine.renderer));
+
+  ctx.progress(0.955, 'terrain: building tiles');
   const view = new URLSearchParams(window.location.search).get('view');
   if (view === 'split' && hf.preErosion) {
     // erosion before/after: pre-erosion clay on the left, eroded on the right
@@ -51,7 +65,7 @@ export async function buildTerrainScene(ctx: WorldContext): Promise<void> {
       post.update(engine.camera);
     });
   } else {
-    const tiles = new TerrainTiles(hf, view);
+    const tiles = new TerrainTiles(hf, view, { gi });
     engine.scene.add(tiles.mesh);
     engine.scene.add(tiles.farShell);
     engine.onUpdate(() => {
@@ -59,12 +73,6 @@ export async function buildTerrainScene(ctx: WorldContext): Promise<void> {
       engine.stats.counters['terrain.tiles'] = tiles.activeTiles;
     });
   }
-
-  // physical sky: Hillaire atmosphere + transmittance-tinted sun + sky IBL
-  ctx.progress(0.96, 'sky: baking atmosphere LUTs');
-  const sunSky = new SunSky(engine, params.timeOfDay);
-  await sunSky.init(engine.renderer);
-  (engine as unknown as { sunSky?: SunSky }).sunSky = sunSky;
 
   // volumetric clouds (noise bake + sun-shadow map)
   ctx.progress(0.97, 'sky: baking cloud noise');
@@ -83,6 +91,7 @@ export async function buildTerrainScene(ctx: WorldContext): Promise<void> {
     void (async () => {
       await sunSky.setTimeOfDay(t);
       await clouds.refreshShadow(engine.renderer);
+      gi.invalidate();
       post.setTimeOfDay(t);
     })();
   };

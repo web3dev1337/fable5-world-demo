@@ -11,7 +11,7 @@
  */
 
 import { InstancedMesh, PlaneGeometry, RingGeometry, Mesh, type PerspectiveCamera } from 'three';
-import { MeshStandardNodeMaterial, type StorageBufferNode } from 'three/webgpu';
+import { IrradianceNode, MeshStandardNodeMaterial, type StorageBufferNode } from 'three/webgpu';
 import {
   cameraPosition,
   clamp,
@@ -30,6 +30,7 @@ import {
   vec3,
   vec4,
 } from 'three/tsl';
+import type { ProbeGI } from '../gpu/passes/ProbeGI';
 import { buildTerrainShading } from '../render/TerrainMaterial';
 import type { Heightfield } from './Heightfield';
 import { macroTerrain } from './MacroMap';
@@ -58,7 +59,12 @@ export class TerrainTiles {
   constructor(
     hf: Heightfield,
     debugView: string | null = null,
-    opts: { heightBuf?: typeof hf.height; neutral?: boolean; screenHalf?: 'left' | 'right' } = {},
+    opts: {
+      heightBuf?: typeof hf.height;
+      neutral?: boolean;
+      screenHalf?: 'left' | 'right';
+      gi?: ProbeGI;
+    } = {},
   ) {
     this.hf = hf;
     this.buildRangePyramid();
@@ -132,6 +138,20 @@ export class TerrainTiles {
     mat.normalNode = shading.normalNode;
     mat.roughnessNode = shading.roughnessNode;
     mat.metalnessNode = float(0);
+    if (opts.gi && !ablate.has('gi')) {
+      // probe-GI irradiance replaces the hemisphere ambient (Phase 3) —
+      // injected through the lighting context like a light map
+      const irr = opts.gi.irradiance(positionWorld, shading.worldNormalNode);
+      (mat as unknown as { setupLightMap: () => unknown }).setupLightMap = () =>
+        new IrradianceNode(irr as unknown as ConstructorParameters<typeof IrradianceNode>[0]);
+    }
+    if (debugView === 'probes' && opts.gi) {
+      // ambient-only view: probe irradiance × albedo, no sun/shadows
+      mat.colorNode = vec3(0.0);
+      mat.emissiveNode = opts.gi
+        .irradiance(positionWorld, shading.worldNormalNode)
+        .mul(shading.colorNode);
+    }
     if (debugView === 'lod') {
       // distinct color per LOD level + faint grid along tile edges
       const lod = tile.w;
@@ -222,6 +242,11 @@ export class TerrainTiles {
     farMat.normalNode = farShading.normalNode;
     farMat.roughnessNode = farShading.roughnessNode;
     farMat.metalnessNode = float(0);
+    if (opts.gi && !ablate.has('gi')) {
+      const farIrr = opts.gi.irradiance(positionWorld, farShading.worldNormalNode);
+      (farMat as unknown as { setupLightMap: () => unknown }).setupLightMap = () =>
+        new IrradianceNode(farIrr as unknown as ConstructorParameters<typeof IrradianceNode>[0]);
+    }
     this.farShell = new Mesh(ring, farMat);
     this.farShell.frustumCulled = false;
     this.farShell.receiveShadow = true;

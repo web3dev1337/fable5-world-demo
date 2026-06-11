@@ -38,7 +38,8 @@
       "Bash(curl -s \"http://localhost:5173/src/render/TerrainMaterial.ts\")",
       "Bash(md5 shots/wip/shadowcolor.png shots/wip/shadowcolor2.png shots/wip/streak-cov0.png shots/wip/streak-noshadow.png shots/wip/streak-final.png)",
       "Bash(awk -F'= ' '{print $2, $1}')",
-      "Bash(git commit -q -m 'Phase 2 CLOSE: golden-hour gate passed vs Witcher ref; shadow-color test passed *)"
+      "Bash(git commit -q -m 'Phase 2 CLOSE: golden-hour gate passed vs Witcher ref; shadow-color test passed *)",
+      "Bash(node -e \"const t=require\\('three/webgpu'\\); console.log\\('IrradianceNode' in t\\)\")"
     ]
   }
 }

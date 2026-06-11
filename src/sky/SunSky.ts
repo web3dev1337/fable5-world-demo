@@ -25,6 +25,8 @@ export class SunSky {
   private iblDirty = true;
   private sunDirWorld = new Vector3();
   private hemi!: HemisphereLight;
+  /** ambient floor scale: dropped to ~0.15 when probe GI is active */
+  private ambientScale = 1;
 
   constructor(engine: Engine, initialTod: number) {
     this.engine = engine;
@@ -95,7 +97,7 @@ export class SunSky {
     // bounce; dims and warms with the sun's transmittance through the day
     const day = above * lum;
     const warm = 1 - Math.min(1, Math.max(0, this.sunDirWorld.y * 3));
-    this.hemi.intensity = SUN_E * (0.085 + 0.1 * day);
+    this.hemi.intensity = SUN_E * (0.085 + 0.1 * day) * this.ambientScale;
     this.hemi.color = new Color(
       0.34 + 0.25 * warm * 0.4,
       0.45 + 0.08 * warm * 0.2,
@@ -109,6 +111,12 @@ export class SunSky {
 
     this.iblDirty = true;
     await this.refreshIBL();
+  }
+
+  /** probe GI active: hemisphere becomes a small safety floor only */
+  dimAmbientForGI(): void {
+    this.ambientScale = 0.15;
+    this.hemi.intensity *= 0.15;
   }
 
   /** re-bake the environment cube from the sky (ToD changes only) */

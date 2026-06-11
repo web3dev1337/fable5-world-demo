@@ -71,8 +71,17 @@ feedback comes in chat; the two-frame test is the agent-side acceptance only.
       teal-orange golden split). Gates PASSED: golden vista vs Witcher (DELTA.md Phase 2,
       ~70% of ref without vegetation), shadow-color test (chroma 18.3/255, no gray).
       Artifacts: shots/phase-2/. Known debts → DELTA items 1,4,7–10.
-- [ ] **Phase 3** — irradiance probe clipmap (GPU, time-sliced, sky+sun+bounce), GTAO tuning,
-      screen-space bounce, foliage translucency. Gate: forest interior vs scene1; no-black-shadows.
+- [x] **Phase 3** — DONE 2026-06-11 (vegetation-dependent parts deferred w/ DEVIATIONS).
+      Irradiance probe field: 256×256×6 TERRAIN-RELATIVE layers (1.5–105 m above ground),
+      heightfield ray-march gather (16 dirs × 16 steps, sun horizon test + albedo proxy +
+      sky LUT misses), SH-L1 → 3×rgba16f 3D textures, time-sliced 3072/frame (~2 s refresh,
+      invalidate() fast-converge on ToD jumps), injected via IrradianceNode (setupLightMap
+      patch); hemisphere dimmed to 0.15× floor. GTAO: depth-derived normals + distance fade
+      + luminance-masked 'indirect-only' approx (DEVIATIONS D-1). Screen-space bounce +
+      foliage translucency → Phase 4 (D-2). Probe density vs spec floor → D-3.
+      VERIFIED: no-black-shadows at golden hour (darkest-20 lum 61.8, chroma 20.1 — AgX-toe
+      desat fixed); ?view=probes ambient-only debug view; +3 ms GPU. Forest-interior gate
+      re-judged after Phase 4 (no forest exists). Artifacts: shots/phase-3/.
 - [ ] **Phase 4** — generators: 6+ tree species (per-instance growth), rocks/cliffs, grass, ferns,
       shrubs×3, flowers×4 (incl. pink shrub), deadfall, debris classes, procedural texture arrays,
       dressing systems (moss/vines/ledge ferns/root flare/fungi/staining), octahedral impostors,
@@ -128,24 +137,22 @@ pass (contrast-stretched weather, isotropic phase floor, base-darkened ambient, 
 cov 0.62), contact shadows (?ablate=contact to A/B), black facets root-caused to GTAO
 (NOT PCSS — depth-derived normals fixed it), gate + shadow-color test PASSED.
 
-**Phase 3 — GI: irradiance probe clipmap, indirect-only GTAO, screen-space bounce,
-foliage translucency prep.** Starting state: hemisphere ambient stopgap lives in
-SunSky (intensity SUN_E·(0.085+0.1·day)); scene.environment CubeCamera path exists but
-contributes ~nothing (known dead). Probes replace BOTH.
+**Phase 4 — generators: 6+ tree species, rocks/cliffs, grass, shrubs, flowers,
+deadfall/debris, dressing, impostors, ?scene=gallery.** The single biggest visual gap
+(DELTA Phase-2 #1). Strategy D5: K structural variants per species per LOD ring +
+continuous per-instance GPU deformation + bespoke hero meshes near camera.
 
 ## Next actions (always keep current)
 
-- Phase 3 design: probe volume covering the 4 km world (clipmap around camera per spec
-  §2 ≥24×24×6/chunk — interpret as world-space clipmap L0 ~2 m spacing near camera).
-  Bake path: GPU time-sliced — N probes/frame, each gathers sky visibility + sun bounce
-  from the heightfield (terrain-only world: heightfield ray march suffices — no meshes
-  yet!). Store SH-L1 or ambient-cube in 3D textures; sample in materials as ambient
-  term replacing hemisphere; keep hemisphere as outer-fallback.
-- Then: GTAO multiplies indirect only (needs separating direct/indirect — restructure
-  lighting or accept approximation); screen-space directional bounce kicker.
-- KNOWN visual debts (carried): DELTA Phase-2 items 1 (vegetation), 4 (2nd cloud
-  layer), 7 (gate framing anchor), 9 (AgX toe desat), 10 (god rays); kettle-pond
-  density (Phase 6); terrain 20 M tris at massif views (shadow culling, Phase 5).
+- Phase 4 design pass: procedural tree builder architecture (branching skeleton →
+  mesh ribs → leaf cards w/ procedural texture ARRAYS), species params (conifer ×2,
+  broadleaf ×2, karst-gnarled, snag), rock/boulder builder (cube-sphere + ridged
+  displacement + hardness strata), grass blade geometry, gallery scene for the
+  macro–meso–micro audit. Wire aoNode + translucency + SS-bounce during material
+  build (DEVIATIONS D-1/D-2 close-out).
+- KNOWN visual debts (carried): DELTA Ph-2 #4 (2nd cloud layer, Ph 6), #7 (gate
+  framing anchor), #10 (god rays, Ph 6); kettle-pond density (Ph 6 water); terrain
+  20 M tris at massif views (shadow culling, Ph 5).
 
 ## Key decisions log
 

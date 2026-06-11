@@ -227,7 +227,13 @@ export class PostStack {
     const aoFaded = Fn((): NF => {
       const dist = getViewPosition(screenUV, depthTex.x, uProjInv).length();
       const k = smoothstep(700, 1800, dist);
-      return mix(aoPass.getTextureNode().x, float(1), k);
+      // indirect-only approximation: sun-lit pixels (high HDR luminance)
+      // shed most of the post-AO — occlusion belongs to ambient light.
+      // (True aoNode-into-lighting wiring lands with the Phase-4 material
+      // restructure; see DEVIATIONS.md.)
+      const directK = smoothstep(1.2, 4.0, luminance(beauty.rgb)).mul(0.75);
+      const aoRaw = aoPass.getTextureNode().x;
+      return mix(mix(aoRaw, float(1), directK), float(1), k);
     })();
     // --- screen-space contact shadows (spec §2 floor) ---------------------------
     // Short depth-buffer march toward the sun: picks up the ~0.1–2 m contact
