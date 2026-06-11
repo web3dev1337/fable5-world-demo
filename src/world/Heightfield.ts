@@ -357,6 +357,17 @@ export class Heightfield {
     return bilerpFloatBuffer(wy, this.waterFarRes, uvToGrid(uv, this.waterFarRes));
   }
 
+  /** nearest-texel waterY (compute kernels: veg/debris water gating) */
+  sampleWaterYNearest(p: NV2): NF {
+    const wy = this.waterY;
+    if (!wy) throw new Error('waterY not built');
+    const res = this.simRes;
+    const g = clamp(this.uvFromWorld(p), 0, 1).mul(res);
+    const x = clamp(floor(g.x), 0, res - 1).toInt();
+    const y = clamp(floor(g.y), 0, res - 1).toInt();
+    return wy.element(y.mul(res).add(x));
+  }
+
   /** pack sim-res hydrology fields into a filterable rgba16f texture */
   private async buildFieldsTex(renderer: Renderer): Promise<void> {
     const flow = this.flow;

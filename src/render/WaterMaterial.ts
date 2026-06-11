@@ -64,6 +64,7 @@ import type { StorageTexture } from 'three/webgpu';
 import { PERIOD_FBM } from '../gpu/passes/NoiseBake';
 import { bilerpVec2Buffer } from '../gpu/BufferSample';
 import { canopyAt } from '../gpu/passes/Scatter';
+import type { ProbeGI } from '../gpu/passes/ProbeGI';
 import type { NF, NI, NV2, NV3, NV4 } from '../gpu/TSLTypes';
 import type { Atmosphere } from '../sky/Atmosphere';
 import type { Heightfield } from '../world/Heightfield';
@@ -91,6 +92,7 @@ export function waterMaterial(
   hf: Heightfield,
   atm: Atmosphere,
   canopyTex: StorageTexture | null,
+  gi: ProbeGI | null,
   lvl: WaterLevelHandles,
 ): MeshStandardNodeMaterial {
   const flow = hf.flow;
@@ -140,7 +142,10 @@ export function waterMaterial(
   const offB = vel.mul(ph2.div(CYC)).add(vec2(3.71, 1.13));
   const layer = (off: NV2): NV2 => gradAt(0.9, off).add(gradAt(3.4, off.mul(0.62)).mul(0.5));
   const grad = mix(layer(offA), layer(offB), w2);
-  const rippleAmp = float(0.018).add(spd.mul(0.085));
+  // baked fbm gradients are ±(3..10)/m at these scales — the old amp
+  // (0.018+0.085·spd) tilted normals 8–30° everywhere, saturating fresnel
+  // to ~1 and turning every stream into a sky mirror ("white sheet")
+  const rippleAmp = float(0.007).add(spd.mul(0.028));
   const slope = grad.mul(rippleAmp);
   const n = vec3(slope.x.negate(), 1, slope.y.negate()).normalize();
   mat.normalNode = transformNormalToView(n);
@@ -232,14 +237,36 @@ export function waterMaterial(
       const cov = canopyAt(canopyTex, positionWorld.xz);
       sky = sky.mul(cov.mul(0.7).oneMinus()) as unknown as ReturnType<typeof atm.skyColor>;
     }
+    // TERRAIN-HORIZON occlusion: when the SSR march misses, "sky" is only
+    // correct if the reflected ray actually clears the terrain. A noon gorge
+    // stream otherwise mirrors bright open sky and reads as a white-blue
+    // sheet (the walls are what's really in the mirror). March the height
+    // field at log-spaced ranges (nearest fetches); occluded rays fall back
+    // to the probe field sampled toward the reflection — the probes already
+    // encode how bright the walls/canopy are in that direction.
+    const horizonVis = float(1).toVar();
+    for (const dRay of [9, 24, 65, 180]) {
+      const q = positionWorld.xz.add(rdir.xz.mul(dRay));
+      const rayY = positionWorld.y.add(rdir.y.mul(dRay));
+      horizonVis.mulAssign(smoothstep(-7, 1.5, rayY.sub(hf.sampleHeightNearest(q))));
+    }
+    const wallAmb = gi
+      ? (gi.irradiance(positionWorld, rdir).mul(0.5) as unknown as NV3)
+      : (sky.mul(0.18) as unknown as NV3);
+    const fallback = mix(wallAmb, sky as unknown as NV3, horizonVis);
     // fade SSR toward the screen border so hits don't pop at the edge
     const e = hitUv.sub(0.5).abs().mul(2);
     const edgeFade = smoothstep(1.0, 0.82, e.x.max(e.y));
     const scene = (viewportSharedTexture(hitUv) as unknown as NV4).rgb;
-    return mix(sky, scene, hit.mul(edgeFade));
+    return mix(fallback, scene, hit.mul(edgeFade));
   })();
   const skyRefl = reflection as unknown as NV3;
-  const cosT = clamp(viewDir.dot(n), 0.0, 1.0);
+  // fresnel on a FLATTENED normal (standard water practice): per-pixel
+  // ripple tilt makes (1−cosθ)^5 explode at any view angle — reflectance
+  // weight should follow the mean surface, the ripples only shape WHAT is
+  // reflected (rdir above keeps the full normal)
+  const nFres = vec3(n.x.mul(0.3), n.y, n.z.mul(0.3)).normalize();
+  const cosT = clamp(viewDir.dot(nFres), 0.0, 1.0);
   const fres = float(0.02).add(float(0.98).mul(cosT.oneMinus().pow(5)));
 
   // ---- foam ----------------------------------------------------------------------
@@ -262,15 +289,17 @@ export function waterMaterial(
   const fblend = mix(fA, fB, w2).sub(0.5).div(varNorm).add(0.5);
   const fDetail = mix(dA, dB, w2).sub(0.5).div(varNorm).add(0.5);
   const foamPat = smoothstep(0.42, 0.85, fblend.mul(0.62).add(fDetail.mul(0.38)));
-  const shoreFoam = smoothstep(0.16, 0.03, vDepth).mul(0.55);
+  const shoreFoam = smoothstep(0.16, 0.03, vDepth).mul(0.42);
   // rapids key on the DROP of the water surface along flow (a large calm
   // river has high strength but no whitewater — slope is what froths).
-  // Window starts at ~2.5° so an ordinary mountain gradient stays clean.
+  // Window starts at ~3% grade: a 1.5% start blanketed every gorge reach
+  // in white (real streams run clear on smooth grades and froth at STEPS,
+  // which survive in the smoothed field as locally steeper sub-reaches).
   const drop = sampleY(positionWorld.xz)
     .sub(sampleY(positionWorld.xz.add(fdir.mul(3))))
     .div(3);
-  const rapidFoam = smoothstep(0.045, 0.13, drop).mul(smoothstep(0.12, 0.45, spd)).mul(0.85);
-  const foam = clamp(shoreFoam.add(rapidFoam), 0, 1).mul(foamPat).clamp(0, 0.75) as NF;
+  const rapidFoam = smoothstep(0.09, 0.24, drop).mul(smoothstep(0.18, 0.55, spd)).mul(0.8);
+  const foam = clamp(shoreFoam.add(rapidFoam), 0, 1).mul(foamPat).clamp(0, 0.68) as NF;
 
   // ---- compose --------------------------------------------------------------------
   mat.colorNode = vec3(0.74, 0.76, 0.74).mul(foam);
@@ -278,6 +307,27 @@ export function waterMaterial(
   mat.roughnessNode = mix(float(0.05), float(0.55), foam);
   // shoreline feather: mm-deep water fades out over the bed
   mat.opacityNode = smoothstep(0.004, 0.05, vDepth).mul(0.985);
+
+  // ?waterdbg=N — component probe ladder (1 foam, 2 fresnel, 3 refraction,
+  // 4 reflection, 5 column thickness, 6 SSR hit/horizon mix)
+  const dbg = Number(new URLSearchParams(window.location.search).get('waterdbg') ?? '0');
+  if (dbg > 0) {
+    const paint =
+      dbg === 1
+        ? vec3(foam)
+        : dbg === 2
+          ? vec3(fres)
+          : dbg === 3
+            ? refr
+            : dbg === 4
+              ? skyRefl
+              : dbg === 5
+                ? vec3(thick.mul(0.25), vDepth.mul(0.25), 0)
+                : (skyRefl as NV3);
+    mat.colorNode = vec3(0);
+    mat.emissiveNode = paint;
+    mat.opacityNode = float(1);
+  }
 
   return mat;
 }

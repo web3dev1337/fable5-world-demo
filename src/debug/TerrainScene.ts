@@ -123,7 +123,12 @@ export async function buildTerrainScene(ctx: WorldContext): Promise<void> {
 
   // Phase 6: stream/lake water clipmap (?ablate=water to A/B)
   if (view !== 'split' && !ablate.has('water')) {
-    const water = new WaterSurface(hf, sunSky.atmosphere, canopyTex);
+    const water = new WaterSurface(
+      hf,
+      sunSky.atmosphere,
+      canopyTex,
+      ablate.has('gi') ? null : gi,
+    );
     engine.scene.add(water.group);
     engine.onUpdate(() => water.update(engine.camera));
   }

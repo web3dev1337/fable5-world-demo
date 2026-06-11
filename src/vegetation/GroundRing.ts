@@ -393,12 +393,22 @@ export class GroundRing {
       const ns = texture(hf.normalTex, uvW, 0) as unknown as NV4;
       const bioId = bio.x.mul(8).add(0.5).floor().toInt();
       const h = hf.sampleHeight(wpos);
-      If(fl.z.greaterThan(0.3).or(fl.w.sub(h).greaterThan(0.28)), () => {
+      // gate on the ACTUAL water surface, not the carve apron: riverDepth
+      // is widen-blurred and flags whole gorge floors as "river" — grass
+      // vanished from every dry bank (scene1 banks are green to the line)
+      const above = h.sub(hf.sampleWaterYNearest(wpos));
+      If(above.lessThan(0.04), () => {
         Return();
       });
       const canopy = canopyAt(canopyTex, wpos);
-      // soft bank margin — a hard depth cut prints a razor arc along streams
-      const bank = float(1).sub(smoothstep(0.08, 0.28, fl.z));
+      // soft bank margin: full grass from ~0.5 m above the waterline. The
+      // channel scar (deep riverDepth) thins hard — the debris ring's
+      // cobbles take over there (scene1: cobbled floor with grassy banks,
+      // not a meadow blanket to the waterline) — but never zeroes, so
+      // tufts still break the gravel.
+      const bank = smoothstep(0.06, 0.5, above).mul(
+        float(1).sub(smoothstep(0.2, 1.1, fl.z).mul(0.78)),
+      );
       let dens = byBio(bioId, [0.18, 0.7, 0.62, 0.7, 1.5, 1.1])
         .mul(bank)
         .mul(bio.z.mul(0.85).add(0.15))
@@ -467,7 +477,10 @@ export class GroundRing {
       const ns = texture(hf.normalTex, uvW, 0) as unknown as NV4;
       const bioId = bio.x.mul(8).add(0.5).floor().toInt();
       const h = hf.sampleHeight(wpos);
-      If(fl.w.sub(h).greaterThan(0.4), () => {
+      // cobbles stay visible THROUGH shallow water (scene1: the trickle
+      // runs over them) — only drop debris under genuinely deep water
+      const submergedBy = hf.sampleWaterYNearest(wpos).sub(h);
+      If(submergedBy.greaterThan(0.55), () => {
         Return();
       });
       const canopy = canopyAt(canopyTex, wpos);
@@ -475,11 +488,21 @@ export class GroundRing {
       // bank margin: too shallow for the bed override, too wet for grass —
       // gravel it or it reads as a bare strip along every wash
       const marginK = smoothstep(0.005, 0.06, fl.z).mul(float(1).sub(streamK));
-      const wCobble = streamK.mul(2.2).add(marginK.mul(1.4)).add(bio.w.mul(0.3)).mul(0.5);
+      // organic debris floats off — submerged cells keep only stone classes
+      const dry = smoothstep(0.05, -0.02, submergedBy);
+      // channel core (deep scar or submerged) leans hard into cobbles —
+      // scene1's bed is packed rounded stone, not occasional rocks
+      const coreK = smoothstep(0.25, 1.0, fl.z).max(smoothstep(-0.05, 0.15, submergedBy));
+      const wCobble = streamK
+        .mul(2.2)
+        .add(marginK.mul(1.4))
+        .add(bio.w.mul(0.3))
+        .add(coreK.mul(2.6))
+        .mul(0.5);
       const wPebble = bio.w.mul(0.9).add(streamK).add(marginK.mul(1.4)).add(0.15).mul(0.6);
-      const wTwig = canopy.mul(1.8).add(0.12).mul(float(1).sub(streamK));
-      const wChip = canopy.mul(0.8).mul(float(1).sub(streamK));
-      const wLitter = canopy.mul(3.0).add(0.08).mul(float(1).sub(streamK.mul(0.8)));
+      const wTwig = canopy.mul(1.8).add(0.12).mul(float(1).sub(streamK)).mul(dry);
+      const wChip = canopy.mul(0.8).mul(float(1).sub(streamK)).mul(dry);
+      const wLitter = canopy.mul(3.0).add(0.08).mul(float(1).sub(streamK.mul(0.8))).mul(dry);
       const wSum = wCobble.add(wPebble).add(wTwig).add(wChip).add(wLitter);
       // streambeds are FULLY cobbled geometry (spec §9) — override biome density
       const dens = byBio(bioId, [0.4, 0.6, 1.0, 1.0, 0.6, 0.75])

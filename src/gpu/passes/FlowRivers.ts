@@ -420,7 +420,9 @@ export async function runFlowRivers(
   //    only. Small gullies stay dry cobbled scars; the main river, big
   //    tributaries and ravine runs keep their streams.
   const RIVER_T = particles / N + 14;
-  const WATER_T = particles / N + 220;
+  // raised 220 → 320 with the stricter rSurf curve (user: "A TON of water
+  // absolutely everywhere") — only genuine collectors render open water
+  const WATER_T = particles / N + 320;
   const waterStrength = instancedArray(N, 'float');
   const strengthK = guard(() => {
     const { i } = cellXY();
@@ -493,10 +495,15 @@ export async function runFlowRivers(
     // at the true shoreline — bed+blurredDepth towers over pot rims); rivers
     // at carved bed + a depth from the STRICT water threshold, minus the
     // widen-blur's 0.12 m apron floor. Carve-only gullies stay dry.
-    const wB = clamp(waterStrength.element(i).mul(2.1), 0, 1);
-    const rSurf = wB.pow(1.35).mul(7.5).mul(lakeFade).mul(0.45).add(0.12)
+    // USER MANDATE (post water-shader): much stricter visible water — the
+    // old curve (sat ×2.1, ^1.35, peak 3.4 m) flooded gorge floors wall-to-
+    // wall. Slower saturation + sharper power keep water to the channel
+    // CORE; peak ~1.5 m is wading depth, headwaters become trickles in a
+    // cobbled bed. Lakes (fill level) and flowStrength consumers untouched.
+    const wB = clamp(waterStrength.element(i).mul(1.5), 0, 1);
+    const rSurf = wB.pow(2.2).mul(3.3).mul(lakeFade).mul(0.45).add(0.12)
       .mul(rdGate).sub(0.12).max(0);
-    const riverWet = wB.greaterThan(0.04).and(rSurf.greaterThan(0.04));
+    const riverWet = wB.greaterThan(0.05).and(rSurf.greaterThan(0.05));
     waterYRaw.element(i).assign(
       isLake.select(W.element(i), riverWet.select(hNew.add(rSurf), float(-1e4))),
     );

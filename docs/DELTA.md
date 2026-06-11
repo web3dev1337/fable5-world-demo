@@ -173,3 +173,29 @@ Fixes this loop — RESULTS:
 Repetition flight: no clone patterns or texture tiling across strip-1..5 ✓
 (pop = dithered crossfades, live-verified). Floors: hero 19.5M / vista 6.8M
 / grass 1.0M — all passed (shots/phase-5/floor-*).
+
+## Phase 6 in-progress notes (2026-06-12) — stream water vs scene1 (baseline before wind/particles)
+
+Baseline: shots/wip/cmp-scene1-baseline.png (gorge reach 628,668 vs scene1).
+Water systems landed: physical fresnel (flattened-normal weight — the
+"white sheet" was fresnel saturated by over-steep ripple normals), terrain-
+horizon-occluded reflections w/ probe-GI wall fallback, foam restricted to
+real steps (3%+ grade), analytic caustics + biofilm bed darkening + wet
+fringe, USER-MANDATED strict hydrology (WATER_T 220→320, rSurf sat 1.5
+pow 2.2 cap ~1.5 m → narrow channel cores; aerials: only genuine collectors
+hold water, washes stay as dry cobbled scars), grass to the waterline w/
+channel-scar thinning, cobbles visible through shallow water.
+
+Top deltas to close at phase gate (after wind/volumetrics/particles land):
+1. COMPOSITION: camera must sit ON the bed (~1 m) looking along the run;
+   current shots stand on the bank. Hunt a reach with wall framing.
+2. Foreground hero boulders (1–2 m, mossy, rounded) anchoring the frame —
+   river-boulder affinity exists; verify presence at candidate reaches or
+   boost margin-boulder weight.
+3. Cobble READ at the waterline: present but small/sparse vs ref's packed
+   fist-size stones — consider size skew up + density at margin band.
+4. Gorge wall greening at the chosen reach (some reaches are pale karst;
+   scene1 walls are heavily vegetated — pick a green reach or boost).
+5. Dark overhang top-frame (value structure: dark frame → lit mid →
+   luminous bg) — composition choice at gate time.
+6. Motion: wind sway + drifting particles missing (next workstreams).

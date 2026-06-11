@@ -206,9 +206,16 @@ export class TerrainTiles {
       const d = causticDepth(positionWorld);
       const fringe = smoothstep(-0.45, -0.04, d);
       const caust = causticTint(positionWorld, d);
-      mat.colorNode = shading.colorNode
+      // permanently submerged beds grow biofilm/algae: darker and olive —
+      // without this the sunlit gravel splat shines straight through the
+      // water and the whole stream reads as a pale sheet (vs scene1's dark
+      // glassy trickle)
+      const biofilm = smoothstep(0.04, 0.5, d);
+      let wetCol = shading.colorNode
         .mul(fringe.mul(0.38).oneMinus())
-        .mul(caust.mul(2.2).add(1));
+        .mul(biofilm.mul(0.42).oneMinus());
+      wetCol = mix(wetCol, wetCol.mul(vec3(0.72, 0.86, 0.55)), biofilm.mul(0.65));
+      mat.colorNode = wetCol.mul(caust.mul(2.2).add(1));
       mat.roughnessNode = shading.roughnessNode.sub(fringe.mul(0.42)).clamp(0.18, 1);
       // ?caustlit=1 — paint the lit graph's own caustic chain (triage):
       // r = gated tint×4, g = gate product, b = ungated pattern
