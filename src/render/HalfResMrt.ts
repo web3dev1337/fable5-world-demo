@@ -25,8 +25,9 @@ import {
   RendererUtils,
   TempNode,
 } from 'three/webgpu';
-import { mrt, passTexture, uniform } from 'three/tsl';
+import { mrt, passTexture } from 'three/tsl';
 import { tagGpu } from '../core/GpuProfiler';
+import { runiform } from '../gpu/RenderUniform';
 
 export interface HalfResEntry {
   name: string;
@@ -39,7 +40,7 @@ type RendererState = unknown;
 
 export class HalfResMrtNode extends TempNode {
   /** half-res dimensions, live-updated — the GTAO noise tiling reads this */
-  readonly resolution = uniform(new Vector2());
+  readonly resolution = runiform(new Vector2());
 
   private readonly rt: RenderTarget;
   private readonly material = new NodeMaterial();

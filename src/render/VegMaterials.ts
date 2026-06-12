@@ -20,7 +20,6 @@ import {
   positionWorld,
   smoothstep,
   texture,
-  uniform,
   uv,
   varying,
   vec3,
@@ -28,15 +27,16 @@ import {
 import { fbm3, valueNoise3 } from '../gpu/noise/NoiseTSL';
 import type { NF, NV3, NV4 } from '../gpu/TSLTypes';
 import { applyCaustics } from './Caustics';
+import { runiform } from '../gpu/RenderUniform';
 
 /**
  * Shared sun uniforms for the foliage translucency term (D-2). Updated by
  * the scene on init + time-of-day changes.
  */
 export const sunU = {
-  dir: uniform(new Vector3(0, 1, 0)),
-  color: uniform(new Color(1, 1, 1)),
-  intensity: uniform(0),
+  dir: runiform(new Vector3(0, 1, 0)),
+  color: runiform(new Color(1, 1, 1)),
+  intensity: runiform(0),
 };
 
 export function updateSunUniforms(sun: DirectionalLight): void {

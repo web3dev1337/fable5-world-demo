@@ -29,13 +29,13 @@ import {
   screenCoordinate,
   smoothstep,
   uint,
-  uniform,
   varying,
   vec3,
   vec4,
 } from 'three/tsl';
 import type { NB, NF, NU, NV3, NV4 } from '../gpu/TSLTypes';
 import { vegWindOffset, windContext, type WindBind } from './Wind';
+import { runiform } from '../gpu/RenderUniform';
 
 /**
  * Main-camera position for LOD-ring fades. NEVER use TSL `cameraPosition`
@@ -45,7 +45,7 @@ import { vegWindOffset, windContext, type WindBind } from './Wind';
  * → vegetation casts no shadows anywhere while the main view looks perfect.
  * A uniform keeps the discard pattern identical across passes.
  */
-export const vegViewPos = uniform(new Vector3());
+export const vegViewPos = runiform(new Vector3());
 
 /** per-frame update (Forests.update) — feeds every ring-fade distance */
 export function updateVegViewPos(camera: PerspectiveCamera): void {
@@ -97,7 +97,7 @@ export interface FetchedInstance {
 
 /** vertex-stage fetch of the instance record through the compact list */
 export function fetchInstance(bind: InstanceBinding): FetchedInstance {
-  const base = uniform(uint(bind.groupBase));
+  const base = runiform(uint(bind.groupBase));
   const slot = bind.compact.element(
     instanceIndex.add(base as unknown as NU),
   ) as unknown as NU;

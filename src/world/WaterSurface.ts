@@ -17,12 +17,12 @@
 import { BufferAttribute, BufferGeometry, Group, Mesh, Vector2, Vector4 } from 'three';
 import type { PerspectiveCamera } from 'three';
 import type { StorageTexture } from 'three/webgpu';
-import { uniform } from 'three/tsl';
 import type { ProbeGI } from '../gpu/passes/ProbeGI';
 import type { NV2, NV4 } from '../gpu/TSLTypes';
 import { waterMaterial } from '../render/WaterMaterial';
 import type { Atmosphere } from '../sky/Atmosphere';
 import type { Heightfield } from './Heightfield';
+import { runiform } from '../gpu/RenderUniform';
 
 const CELLS = 128; // cells per level edge (verts = CELLS+1)
 const LEVEL_CELL = [1.5, 3, 6, 12, 24, 48]; // m — outermost spans ±3.07 km
@@ -77,8 +77,8 @@ export class WaterSurface {
   ) {
     const geo = gridGeometry();
     for (const cell of LEVEL_CELL) {
-      const origin = uniform(new Vector2());
-      const innerRect = uniform(new Vector4(1e9, 1e9, -1e9, -1e9));
+      const origin = runiform(new Vector2());
+      const innerRect = runiform(new Vector4(1e9, 1e9, -1e9, -1e9));
       const mat = waterMaterial(hf, atm, canopyTex, gi, {
         origin: origin as unknown as NV2,
         innerRect: innerRect as unknown as NV4,

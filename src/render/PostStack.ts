@@ -51,6 +51,7 @@ import type { NF, NV2, NV3, NV4 } from '../gpu/TSLTypes';
 import type { Atmosphere } from '../sky/Atmosphere';
 import { CLOUD_BOTTOM, CLOUD_TOP, type Clouds } from '../sky/Clouds';
 import { GradeUniforms, gradeParamsAt } from './ColorScript';
+import { runiform } from '../gpu/RenderUniform';
 import { gtaoLayer } from './Gtao';
 import { HalfResMrtNode, type HalfResEntry } from './HalfResMrt';
 
@@ -76,20 +77,20 @@ export class PostStack {
     const skyveldbg = q.get('skyveldbg') !== null && q.get('skyveldbg') !== '';
     renderer.toneMapping = cloudview || skyveldbg ? NoToneMapping : AgXToneMapping;
     renderer.toneMappingExposure = 1.0;
-    const frameU = uniform(0);
+    const frameU = runiform(0);
     // The post quad pass binds its own orthographic camera: `cameraPosition`,
     // `cameraWorldMatrix` and `cameraProjectionMatrixInverse` all resolve to
     // THAT camera inside outputNode (verified via ?cloudview probes — depth
     // reconstruction gave quad-local ~1 m distances). Feed the scene camera
     // explicitly, like three's own GTAO/TRAA nodes do.
-    const uCamPos = uniform(new Vector3());
-    const uProjInv = uniform(new Matrix4());
-    const uCamWorld = uniform(new Matrix4());
-    const uProj = uniform(new Matrix4());
-    const uView = uniform(new Matrix4());
+    const uCamPos = runiform(new Vector3());
+    const uProjInv = runiform(new Matrix4());
+    const uCamWorld = runiform(new Matrix4());
+    const uProj = runiform(new Matrix4());
+    const uView = runiform(new Matrix4());
     // previous-frame view/projection — sky-pixel velocity for TRAA (see below)
-    const uPrevView = uniform(new Matrix4());
-    const uPrevProj = uniform(new Matrix4());
+    const uPrevView = runiform(new Matrix4());
+    const uPrevProj = runiform(new Matrix4());
     // Synced at RENDER time, not in onUpdate: updateFns run in registration
     // order and the camera movers (FlyCamera, flythrough) mutate the camera
     // AFTER scene-built subsystems registered — an onUpdate copy here read a
@@ -168,7 +169,7 @@ export class PostStack {
     let halfAo: ReturnType<typeof uniform> | null = null;
     if (!ablate.has('ao')) {
       // resolution uniform is patched in below once the pass node exists
-      halfAo = uniform(new Vector2(2, 2));
+      halfAo = runiform(new Vector2(2, 2));
       halfEntries.push({
         name: 'ao',
         node: gtaoLayer(
@@ -549,13 +550,13 @@ export class PostStack {
     this.exposureKernel.setName('autoExposure');
 
     // --- grade ------------------------------------------------------------------------------
-    const uWB = uniform(this.grade.whiteBalance);
-    const uShadowTint = uniform(this.grade.shadowTint);
-    const uHighlightTint = uniform(this.grade.highlightTint);
-    const uShadowAmt = uniform(0.3);
-    const uHighlightAmt = uniform(0.2);
-    const uSat = uniform(1.0);
-    const uContrast = uniform(1.03);
+    const uWB = runiform(this.grade.whiteBalance);
+    const uShadowTint = runiform(this.grade.shadowTint);
+    const uHighlightTint = runiform(this.grade.highlightTint);
+    const uShadowAmt = runiform(0.3);
+    const uHighlightAmt = runiform(0.2);
+    const uSat = runiform(1.0);
+    const uContrast = runiform(1.03);
     this.uniformsRefresh = (): void => {
       uShadowAmt.value = this.grade.shadowAmt;
       uHighlightAmt.value = this.grade.highlightAmt;

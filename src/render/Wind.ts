@@ -34,17 +34,18 @@
 
 import { Vector2 } from 'three';
 import type { StorageTexture } from 'three/webgpu';
-import { attribute, float, texture, time, uniform, vec2, vec3 } from 'three/tsl';
+import { attribute, float, texture, time, vec2, vec3 } from 'three/tsl';
 import type { NF, NV2, NV3, NV4 } from '../gpu/TSLTypes';
 import { PERIOD_FBM } from '../gpu/passes/NoiseBake';
 import { canopyAt } from '../gpu/passes/Scatter';
+import { runiform } from '../gpu/RenderUniform';
 
 /** global wind state (uniforms — live-tunable; ?wind=N sets strength) */
 export const windU = {
   /** unit horizontal direction the wind BLOWS TOWARD */
-  dir: uniform(new Vector2(0.78, 0.63).normalize()),
+  dir: runiform(new Vector2(0.78, 0.63).normalize()),
   /** 0 = still air, 1 = strong breeze (≈ Beaufort 6 visually) */
-  strength: uniform(0.45),
+  strength: runiform(0.45),
 };
 
 /** gust front advection speed (m/s) — shared by the lag offset below */

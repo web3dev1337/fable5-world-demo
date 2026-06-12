@@ -51,6 +51,7 @@ import {
   vec3,
   vec4,
 } from 'three/tsl';
+import { runiform } from '../gpu/RenderUniform';
 import type { NF, NI, NV2, NV3, NV4 } from '../gpu/TSLTypes';
 
 export interface GtaoOptions {
@@ -78,16 +79,16 @@ export function gtaoLayer(
   resolution: ReturnType<typeof uniform>,
   opts: GtaoOptions,
 ): NF {
-  const uRadius = uniform(opts.radius);
-  const uThickness = uniform(opts.thickness ?? 1);
-  const uDistanceExponent = uniform(opts.distanceExponent ?? 1);
-  const uDistanceFallOff = uniform(opts.distanceFallOff);
-  const uScale = uniform(opts.scale ?? 1);
-  const uSamples = uniform(opts.samples);
+  const uRadius = runiform(opts.radius);
+  const uThickness = runiform(opts.thickness ?? 1);
+  const uDistanceExponent = runiform(opts.distanceExponent ?? 1);
+  const uDistanceFallOff = runiform(opts.distanceFallOff);
+  const uScale = runiform(opts.scale ?? 1);
+  const uSamples = runiform(opts.samples);
   // live object references — read current (jittered) values at upload time,
   // matching stock GTAONode's uniform(camera.projectionMatrix)
-  const uProj = uniform(camera.projectionMatrix);
-  const uProjInv = uniform(camera.projectionMatrixInverse);
+  const uProj = runiform(camera.projectionMatrix);
+  const uProjInv = runiform(camera.projectionMatrixInverse);
   const noiseNode = texture(generateMagicSquareNoise());
 
   return Fn((): NF => {

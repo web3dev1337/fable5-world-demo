@@ -85,6 +85,7 @@ import {
 } from './GroundCover';
 import { buildRock } from './RockBuilder';
 import type { WorldSeed } from '../core/Seed';
+import { runiform } from '../gpu/RenderUniform';
 
 const GRASS_GRID = 3072;
 const GRASS_CELL = 0.105; // m → ±161 m ring, ~90 slots/m²
@@ -136,7 +137,7 @@ const CELL_BIAS = 20000;
 
 /** vertex-stage fetch: packed world cell + ground height for this instance */
 function fetchRing(bind: RingBind): { wc: NV2; y: NF; wpos: NV2 } {
-  const at = instanceIndex.add(uniform(uint(bind.base)) as unknown as NU);
+  const at = instanceIndex.add(runiform(uint(bind.base)) as unknown as NU);
   const packed = bind.cells.element(at) as unknown as NU;
   const wc = vec2(
     float(packed.shiftRight(uint(16))).sub(CELL_BIAS),
