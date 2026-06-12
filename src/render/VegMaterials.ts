@@ -8,7 +8,7 @@
  */
 
 import { Color, DoubleSide, type DirectionalLight, type Texture, Vector3 } from 'three';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
 import {
   attribute,
   cameraPosition,
@@ -85,7 +85,8 @@ export interface BarkMatParams {
 }
 
 export function barkMaterial(p: BarkMatParams): MeshStandardNodeMaterial {
-  const mat = new MeshStandardNodeMaterial();
+  const mat = new MeshPhysicalNodeMaterial();
+  mat.specularIntensity = 0.45;
   const d = vdata();
   const base = vec3(p.color.r, p.color.g, p.color.b);
   mat.colorNode = hueShift(base, d.x, 0.18).mul(d.w.mul(0.75).add(0.25));
@@ -102,7 +103,8 @@ export function barkTexturedMaterial(tex: {
   texA: Texture;
   texB: Texture;
 }): MeshStandardNodeMaterial {
-  const mat = new MeshStandardNodeMaterial();
+  const mat = new MeshPhysicalNodeMaterial();
+  mat.specularIntensity = 0.45;
   const d = vdata();
   const a = texture(tex.texA, uv() as never) as unknown as NV4;
   const b = texture(tex.texB, uv() as never) as unknown as NV4;
@@ -129,7 +131,8 @@ export function rockMaterial(opts?: {
    *  shed it; the default dark tone is for mossy forest boulders */
   tone?: { r: number; g: number; b: number };
 }): MeshStandardNodeMaterial {
-  const mat = new MeshStandardNodeMaterial();
+  const mat = new MeshPhysicalNodeMaterial();
+  mat.specularIntensity = 0.4;
   const d = vdata();
   const wp = positionWorld;
   const strataT = d.y;
@@ -188,7 +191,8 @@ export function deadwoodMaterial(
    *  at noon without a dry-wood darkening */
   dim?: { r: number; g: number; b: number },
 ): MeshStandardNodeMaterial {
-  const mat = new MeshStandardNodeMaterial();
+  const mat = new MeshPhysicalNodeMaterial();
+  mat.specularIntensity = 0.45;
   const d = vdata();
   const a = texture(tex.texA, uv() as never) as unknown as NV4;
   const b = texture(tex.texB, uv() as never) as unknown as NV4;
@@ -258,7 +262,11 @@ export interface FoliageMatParams {
 }
 
 export function foliageMaterial(p: FoliageMatParams): MeshStandardNodeMaterial {
-  const mat = new MeshStandardNodeMaterial();
+  // Physical variant for specularIntensity: white dielectric F0 0.04 at
+  // glancing sun desaturates sunlit leaves to SILVER (user) — real leaves
+  // read color-first; translucency + diffuse carry the lit look
+  const mat = new MeshPhysicalNodeMaterial();
+  mat.specularIntensity = 0.3;
   const d = vdata();
   const base = vec3(p.color.r, p.color.g, p.color.b);
   const tinted = hueShift(base, d.x, p.color.hueVar).mul(d.w.mul(0.8).add(0.2));
@@ -275,7 +283,10 @@ export function foliageCardMaterial(
   atlas: Texture,
   p: FoliageMatParams,
 ): MeshStandardNodeMaterial {
-  const mat = new MeshStandardNodeMaterial();
+  // see foliageMaterial: cards are worse — ONE flat normal per card means
+  // the sheen paints whole cards silver coherently. Near-diffuse.
+  const mat = new MeshPhysicalNodeMaterial();
+  mat.specularIntensity = 0.18;
   const d = vdata();
   const t = texture(atlas, uv() as never) as unknown as NV4;
   const albedo = t.rgb.mul(t.rgb); // sqrt-encoded at capture

@@ -11,7 +11,7 @@
  */
 
 import { PlaneGeometry } from 'three';
-import { MeshStandardNodeMaterial } from 'three/webgpu';
+import { MeshStandardNodeMaterial, MeshPhysicalNodeMaterial } from 'three/webgpu';
 import {
   cameraPosition,
   clamp,
@@ -43,7 +43,10 @@ export function impostorRuntimeMaterial(
   atlas: ImpostorAtlas,
   bind: InstanceBinding,
 ): MeshStandardNodeMaterial {
-  const mat = new MeshStandardNodeMaterial();
+  // physical for specularIntensity — distant crowns went silver at
+  // glancing sun just like the near cards (same flat-normal sheen)
+  const mat = new MeshPhysicalNodeMaterial();
+  mat.specularIntensity = 0.25;
   const { A, B, slot } = fetchInstance(bind);
   const s = A.w;
   const r = s.mul(atlas.radius);
