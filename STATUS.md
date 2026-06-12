@@ -643,19 +643,36 @@ cov 0.62), contact shadows (?ablate=contact to A/B), black facets root-caused to
   question, separate item) while the white shards VANISH ⇒ shards are
   water-surface fragments; (b) same pose at noon (shots/wip/bm2-noon.png)
   — identical tent row along the far shore ⇒ not ToD-specific.
-  WORKING HYPOTHESIS (matches the recorded "one wet texel stretched
-  across a coarse cell" clipmap gotcha): clipmap levels with cell ≥ 6 m
-  (extents ±384/±768 m cover the tent row's range) stride-sample waterY
-  across the margin's TEXEL-SCALE wet/dry alternation — a lone wet texel
-  hoists one coarse vertex to W while its neighbors dive to bed−2 m →
-  steep triangles reading white under grazing fresnel. Open-water
-  framings (this session's lakeshore sweeps) show none — no
-  salt-and-pepper wetness there. NEXT: ?view=hydro at the margin +
-  CPU-sample waterY along the tent row to confirm; candidate fixes
-  ranked: (1) wet-coverage gate per coarse vertex (vertex takes W only
-  when ≥ half its footprint is wet — needs a coverage mip alongside the
-  min-reduction), (2) extend the min-reduced field down to the 6 m
-  level, (3) margin-aware wet-masked smoothing of the render W field.
+  HYPOTHESIS 1 (margin salt-and-pepper wetness → coarse-vertex tents)
+  REFUTED by CPU probes (tools/probe-wetmargin.ts): the area is 93.5%
+  wet with ZERO isolated wet texels, and a transect along the bm2 ray
+  (--transect) shows a textbook flat lake — W smooth 271.35→271.22
+  over 460 m, no adjacent-sample jumps > 0.6 m, fully wet, ground
+  10–26 m below W. NOTE: the bm2 water body is an UPPER lake at fill
+  ~271 m, not the 131 m SW lake (and FlyCamera's fly-mode ground clamp
+  silently lifts too-low --cam y values — a "y=140" probe shot
+  actually rendered from ~253 m; harmless here, but remember when
+  posing probes). CURRENT BEST CANDIDATE: the documented min-reduced
+  FAR-FIELD DIP — levels with cell ≥ 12 m sample block minima, and
+  shore-overlapping blocks pull surface patches meters below the fill
+  level; those PIT WALLS seen edge-on are tilted facets that now read
+  WHITE under sky fresnel. The original bm2 "thin dark band" was
+  diagnosed as these same dips — the Phase-6 fresnel/SSR reworks
+  plausibly flipped their read from dark to white. The tent row's
+  range sits in the level-12 annulus (±384–768 m). CONFIRMATION NEXT:
+  add a water-surface GEOMETRY debug (?waterdbg=7: paint
+  positionWorld.y minus a reference level as emissive) at the bm2
+  framing — tents colocated with min-reduce block boundaries ⇒
+  confirmed. FIX SKETCH (test against the documented regression set):
+  replace far-level min-reduce sampling with full-field + a
+  mixed-footprint vertex gate (5 taps at ±cell/3; spread > ~1.5 m ⇒
+  collapse) — polarity needs care: dry-dive values sit BELOW W on
+  beaches but ABOVE W on tall banks (terrain depth-test already clips
+  banks, so collapse-to-min may suffice). Regression set: tall banks,
+  dry land below fill level behind the outlet dam, the inlet
+  lens/dome cases that killed min-of-wet, narrow channels at
+  distance, level-boundary pop. Alternatively the long-queued
+  planar-lake pass / per-water-body far field solves it structurally.
 
 ## Key decisions log
 
