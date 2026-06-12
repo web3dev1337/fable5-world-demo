@@ -75,7 +75,7 @@ export class Froxels {
   private readonly uProjInv = uniform(new Matrix4());
   private readonly uCamWorld = uniform(new Matrix4());
   /** base fog density scale (?fog=N) */
-  readonly fogK = uniform(1.0);
+  readonly fogK = uniform(0.4);
 
   constructor(
     hf: Heightfield,
@@ -134,15 +134,23 @@ export class Froxels {
         .add(0.45);
       const uvW = clamp(p.xz.div(WORLD_SIZE).add(0.5), 0, 1);
       const moisture = (texture(fieldsTex, uvW, 0) as unknown as NV4).x;
-      // dawn/dusk fog is the look; noon stays thin so shafts read, not soup
-      const todK = smoothstep(0.55, 0.08, sunDirN.y).mul(1.6).add(0.35);
-      const rhoGround = exp(hAbove.div(-32));
+      // dawn/dusk fog is the look; noon goes NEAR-ZERO (user: global fog
+      // washed out an already-soft scene — aerial perspective owns daytime
+      // distance haze, froxels own dawn mist + shafts)
+      const todK = smoothstep(0.55, 0.08, sunDirN.y).mul(1.8).add(0.12);
+      // ground-hug dominates and hugs LOW; the old broad altitude blanket
+      // (=1 below 120 m, i.e. everywhere) made fog global instead of
+      // pooling in wet valleys
+      const rhoGround = exp(hAbove.div(-20));
       const rhoAlt = exp(p.y.sub(120).max(0).div(-140));
+      // moisture-SELECTIVE: m² with a small floor — dry slopes stay clear,
+      // hydrology basins keep their mist
+      const moistK = moisture.mul(moisture).mul(1.5).add(0.25);
       const rho = (this.fogK as unknown as NF)
         .mul(todK)
         .mul(billow)
-        .mul(rhoGround.mul(0.62).add(rhoAlt.mul(0.38)))
-        .mul(moisture.mul(1.1).add(0.55))
+        .mul(rhoGround.mul(0.8).add(rhoAlt.mul(0.2)))
+        .mul(moistK)
         .mul(0.0095)
         .toVar();
 
@@ -171,7 +179,13 @@ export class Froxels {
         float(1 + g * g).sub(cosT.mul(2 * g)).pow(1.5),
       );
       const sunCol = (sunU.color as unknown as NV3).mul(sunU.intensity as unknown as NF);
-      const amb = atm.skyColor(vec3(0, 1, 0)).mul(0.045);
+      // ambient in-scatter mostly follows sun visibility: a flat term lifts
+      // blacks across the whole frame (the 'wash'); shadowed fog should sit
+      // DARK so shafts have something to contrast against
+      const amb = atm
+        .skyColor(vec3(0, 1, 0))
+        .mul(0.018)
+        .mul(vis.mul(0.6).add(0.4));
       const src = sunCol.mul(phase).mul(vis).add(amb).mul(rho);
       textureStore(
         this.scatterTex,
