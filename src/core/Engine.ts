@@ -7,6 +7,7 @@
 import { ACESFilmicToneMapping, PerspectiveCamera, Scene } from 'three';
 import { TimestampQuery, WebGPURenderer } from 'three/webgpu';
 import { buildRequiredLimits } from './Diagnostics';
+import { installMaterialKeyMemo } from '../render/ThreePatches';
 import { installPositionInvariance } from '../render/VegPrepass';
 import { GpuProfiler } from './GpuProfiler';
 import type { EngineStats, LaasHooks } from './Hooks';
@@ -103,6 +104,9 @@ export class Engine {
     // depth-prepass correctness (see VegPrepass): position math must land
     // on identical depths across the depth-only and shaded pipelines
     installPositionInvariance(renderer);
+    // shadow-pass render objects re-hash their material node graph every
+    // frame (see ThreePatches) — memoize per material
+    installMaterialKeyMemo(renderer);
 
     window.addEventListener('resize', () => {
       engine.camera.aspect = window.innerWidth / window.innerHeight;
