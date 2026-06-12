@@ -73,6 +73,7 @@ import {
   uint,
   uniform,
   uniformArray,
+  varying,
   vec2,
   vec3,
   vec4,
@@ -300,8 +301,13 @@ export class Forests {
           .oneMinus(),
       ) as typeof irr;
     }
+    // vertex-stage probe GI (Phase 7 perf): the probe grid is 16 m and the
+    // canopy residual 4 m — across ≤2 m cards or cm-tessellated hero meshes
+    // vertex eval + interpolation is identical, and drops 4 texture taps
+    // from every overdrawn foliage fragment
+    const irrV = varying(irr as unknown as Parameters<typeof varying>[0]);
     (mat as unknown as { setupLightMap: () => unknown }).setupLightMap = () =>
-      new IrradianceNode(irr as unknown as ConstructorParameters<typeof IrradianceNode>[0]);
+      new IrradianceNode(irrV as unknown as ConstructorParameters<typeof IrradianceNode>[0]);
   }
 
   init(renderer: Renderer): void {
