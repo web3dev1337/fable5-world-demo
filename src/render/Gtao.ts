@@ -30,6 +30,7 @@ import {
   div,
   dot,
   float,
+  floor,
   getNormalFromDepth,
   getScreenPosition,
   getViewPosition,
@@ -40,6 +41,7 @@ import {
   mul,
   normalize,
   pow,
+  screenSize,
   sin,
   sqrt,
   sub,
@@ -113,6 +115,9 @@ export function gtaoLayer(
           uProjInv as unknown as Parameters<typeof getNormalFromDepth>[2],
         ) as unknown as NV3
       ).toVar();
+      // own full-res depth texel — used to reject degenerate self-samples
+      // (deviation from stock, see below; depth is drawing-buffer sized)
+      const ownTexel = floor(uvNode.mul(screenSize)).toVar();
 
       const radiusToUse = uRadius;
 
@@ -186,7 +191,19 @@ export function gtaoLayer(
                 uProjInv as unknown as Parameters<typeof getViewPosition>[2],
               ).toVar();
               const viewDeltaX = sampleSceneViewPositionX.sub(viewPosition).toVar();
-              If(abs(viewDeltaX.z).lessThan(uThickness as unknown as NF), () => {
+              // sub-texel rejection (deviation from stock, horizon-black
+              // fix): past a few hundred meters the world-space radius
+              // projects below one depth texel — the sample lands on the
+              // center's OWN texel, passes the thickness test with a
+              // quantization-dominated direction (normalize(≈0)) and drives
+              // cosHorizons → 1 = "fully occluded". A same-texel sample
+              // carries no horizon information; near-field offsets span
+              // many texels and are unaffected.
+              const offTexelX = dot(
+                abs(floor(sampleScreenPositionX.mul(screenSize)).sub(ownTexel)),
+                vec2(1, 1),
+              ).greaterThan(0.5);
+              If(abs(viewDeltaX.z).lessThan(uThickness as unknown as NF).and(offTexelX), () => {
                 const sampleCosHorizon = dot(viewDir, normalize(viewDeltaX));
                 cosHorizons.x.addAssign(
                   max(
@@ -215,7 +232,11 @@ export function gtaoLayer(
                 uProjInv as unknown as Parameters<typeof getViewPosition>[2],
               ).toVar();
               const viewDeltaY = sampleSceneViewPositionY.sub(viewPosition).toVar();
-              If(abs(viewDeltaY.z).lessThan(uThickness as unknown as NF), () => {
+              const offTexelY = dot(
+                abs(floor(sampleScreenPositionY.mul(screenSize)).sub(ownTexel)),
+                vec2(1, 1),
+              ).greaterThan(0.5);
+              If(abs(viewDeltaY.z).lessThan(uThickness as unknown as NF).and(offTexelY), () => {
                 const sampleCosHorizon = dot(viewDir, normalize(viewDeltaY));
                 cosHorizons.y.addAssign(
                   max(
@@ -234,6 +255,10 @@ export function gtaoLayer(
             }) as unknown as Parameters<typeof Loop>[1],
           );
 
+          // f32 guard (deviation from stock, which carries the hazard):
+          // dot(viewDir, normalize(δ)) can read 1+ε at grazing → cos² > 1
+          // → sqrt(negative) = NaN AO
+          cosHorizons.assign(clamp(cosHorizons as unknown as NF, -1, 1) as unknown as NV2);
           // stock: sqrt(sub(1.0, cosHorizons*cosHorizons)) — oneMinus is the
           // same WGSL; @types sqrt is float-only, runtime handles vec2
           const sinHorizons = (

@@ -358,6 +358,7 @@ export class PostStack {
           const halfTexel = vec2(1).div(screenSize.mul(0.5));
           const zC = viewC.z;
           const acc = float(0).toVar();
+          const avg = float(0).toVar();
           const wsum = float(1e-4).toVar();
           for (const [ox, oy] of [
             [-0.5, -0.5],
@@ -370,9 +371,19 @@ export class PostStack {
             const zi = getViewPosition(uvi, (depthTex.sample(uvi) as unknown as NV4).x, uProjInv).z;
             const w = exp2(zi.sub(zC).abs().mul(-3.5));
             acc.addAssign(ai.mul(w));
+            avg.addAssign(ai);
             wsum.addAssign(w);
           }
-          const aoRaw = acc.div(wsum);
+          // GATED fallback for bilateral collapse: on grazing slopes near the
+          // horizon a half-res texel spans tens of meters of view depth, every
+          // tap rejects, and acc/1e-4 → 0 — the upsampler FABRICATED ao=0 and
+          // painted the far field black (horizon-black band; same collapse on
+          // grazing water = bm2 far-rim stripe). Support-free pixels fall back
+          // to the plain 4-tap average; wsum > 0.02 (any tap within ~2 m)
+          // keeps the bilateral result EXACT — zero deviation on healthy
+          // pixels (a global +0.01 weight floor printed a ~1% AO wash on the
+          // bm7 hero trunk and was rejected).
+          const aoRaw = mix(avg.mul(0.25), acc.div(wsum), smoothstep(0.002, 0.02, wsum));
           return mix(mix(aoRaw, float(1), directK), float(1), k);
         })()
       : null;

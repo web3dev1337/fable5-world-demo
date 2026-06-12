@@ -584,55 +584,64 @@ cov 0.62), contact shadows (?ablate=contact to A/B), black facets root-caused to
     still animates on wall-clock TSL time — exclude or accept;
     (d) headless fps ≈ wall only when GPU-bound; with the prepass, bm4
     became CPU-submit-bound and 10 ms GPU savings moved fps <1.
-- **BUG (user-reported 2026-06-14, MUST SOLVE — top of queue after
-  rehydration): HORIZON TURNS FULL BLACK ON REGULAR TERRAIN.** User
-  screenshot preserved: shots/wip/horizon-black-user.png — low-eye view
-  over flat ground; terrain darkens WITH DISTANCE into a solid pitch-black
-  band hugging the horizon line, normal sky above a sharp silhouette. The
-  expected look is the opposite: terrain should fade INTO luminous haze
-  (Pillar D). User: "this issue of horizons turning full black isn't just
-  water related — it's also on regular terrain."
-  UNIFICATION HYPOTHESIS: the long-standing lake FAR-RIM black stripe
-  (bm2, entry below) may be DOWNSTREAM of this — grazing water reflects
-  the far terrain band / samples the same grazing-angle paths; fixing
-  this may resolve both. Candidate mechanisms, ranked:
-  (a) AERIAL/HILLAIRE AT GRAZING: at horizon view angles dirW.y≈0 is the
-  classic LUT parameterization singularity; if transmittance multiplies
-  toward 0 while in-scatter fails to add (LUT edge/wrap sampling, or
-  NaN→0) the far field goes black exactly at grazing — matches BOTH
-  terrain and water symptoms. Also check distKm reconstruction for
-  depth→1−ε (classic depth, far plane 30 km — precision at grazing can
-  explode dist; the isSky threshold is 0.9999999 and pixels just inside
-  it get huge distances fed to aerial()).
-  (b) CSM BEYOND maxFar (3200 m): eye at 1.7 m puts the geometric horizon
-  at ~4.7 km — the band plausibly starts at ~3.2 km. If pixels beyond the
-  last cascade sample as FULLY SHADOWED (fade broken or
-  CachedCsmShadowNode interaction with csm.fade) the far field drops to
-  ambient-only ≈ black. Violates the no-black-shadows law.
-  (c) probe-GI/ambient coverage ending before the far field (softer gray
-  expected, full black less likely); (d) far-shell material/world-edge.
-  DIAGNOSIS PLAN: (1) repro at a ground-level pose over open ground
-  (walk-spawn + horizon look, or lakeshore bm8), pixel-sample a vertical
-  scanline through the band (tools/compare.ts --sample) — confirm RGB≈0;
-  (2) BISECT post vs in-material: ?postmin=1 (bare scene pass, no
-  aerial/AO) — band persists ⇒ in-material (shadows/lighting, candidate
-  b); band vanishes ⇒ post chain (candidate a); (3) ?ablate=shadows A/B
-  for (b); cloudview aerial-only view + a transmittance/in-scatter split
-  probe for (a); (4) altitude discriminator: from 200 m the band should
-  track a FIXED ground distance if (b) (cascade end) vs cling to grazing
-  angles if (a); (5) whichever fixes, re-judge the bm2 lake far-rim
-  stripe — link the two items.
-- KNOWN LIMITATION (logged 2026-06-12, deep-dived; RE-JUDGE after the
-  horizon-black fix above — likely the same root): large-lake FAR RIM
-  shows a thin dark band at low grazing views (bookmark 2). Diagnosis
-  trail: NOT trees/fresnel/SSR-reach/canopy-attenuation/wet-fringe — it
-  is the min-reduced far water field dipping at shore-overlapping 8×8
-  blocks, exaggerated edge-on. min-of-wet/max-of-wet reductions tried and
-  REJECTED (inlet lens/dome — two legitimate wet levels bridge a 16 m far
-  texel). Proper fix = per-water-body far field or the planar-lake pass
-  (optional polish item); ALSO superseded-in-part by the 2026-06-12
-  ablate-discriminated finding (grazing fresnel mirrors the dark SSR-miss
-  fallback) — and now possibly by the terrain horizon-black bug.
+- **BUG RESOLVED (2026-06-12): HORIZON TURNS FULL BLACK — was the GTAO
+  path, not aerial/CSM.** (User screenshot: shots/wip/horizon-black-user.png.)
+  REPRO: lake-basin ground poses (eye ~131 m) — solid RGB(0,0,0) band at
+  the far-rim/horizon line at 6 of 8 yaws (tools/probe-horizon.ts: one-boot
+  yaw sweep + --scan flat-sightline finder + auto band-scan). Highland and
+  spawn poses were CLEAN at every yaw — the band needs long grazing
+  sightlines inside the basin, which is why bookmark sweeps never caught it.
+  BISECT at the repro cam (-1400,131.6,1250,yaw45,T11): persists under
+  ?ablate=water (terrain pixels — the user was right), vanishes under
+  ?postmin=1 (post chain), persists under ?ablate=contact, vanishes under
+  ?ablate=ao ⇒ GTAO. TWO STACKED MECHANISMS, each sufficient for black:
+  (1) JOINT-BILATERAL UPSAMPLE COLLAPSE (PostStack aoFaded): tap weights
+  exp2(−3.5·|Δz|) — near the horizon one half-res texel spans 10s–100s m
+  of view depth, ALL four taps reject, wsum stays at its 1e-4 seed, and
+  aoRaw = acc/1e-4 → 0: the upsampler FABRICATED ao=0 for every grazing
+  far surface. Black is then guaranteed: the band sits INSIDE the 700 m AO
+  fade-in (from a 1.7 m eye the flat-ground "horizon" is only ~300–700 m
+  away ⇒ k≈0) and the dim strip gets no sun-lit exemption (directK=0) →
+  aerial × 0 AFTER the haze composes — which is why it beat the atmosphere
+  (Pillar D inverted). FIX: gated fallback — wsum > 0.02 (any tap within
+  ~2 m) keeps the bilateral result EXACT; support-free pixels fall back to
+  the plain 4-tap average. (A global +0.01 weight floor was tried first
+  and REJECTED: amp-diff showed a ~1% AO wash across the bm7 hero trunk.)
+  (2) GTAO KERNEL SUB-TEXEL DEGENERACY (Gtao.ts; stock GTAONode carries
+  the same hazard): past a few hundred meters the 1.6 m world radius
+  projects below one depth texel — samples land on the center's OWN texel,
+  pass the thickness test with quantization-dominated directions
+  (normalize(≈0)) and drive cosHorizons → 1 = "fully occluded". FIX:
+  same-texel samples rejected (no horizon information; near-field offsets
+  span many texels — unaffected) + f32 guard clamping cosHorizons to
+  [−1,1] before sqrt(1−cos²) (NaN at grazing).
+  VERIFIED: repro cam black-rows 5→0, min channel 0→105; 8-yaw lakeshore
+  sweep 0 black rows (was 6/8); frame-aligned A/B vs pre-fix (--framealign
+  200 --wind 0 --lockexp 1, 1280×720): bm7 mean-abs 0.336% with the hero
+  trunk BIT-EXACT in the amp-diff (residual = sparse distant-foliage
+  speckle where sub-texel noise-occlusion became valid samples — a
+  correction, not a loss), bm4 0.275% pond-excluded (pond = wall-clock
+  water drift vs a 40-min-old baseline, the known methodology confound).
+  bm2 far-rim re-judge: see the entry below.
+- KNOWN LIMITATION RE-JUDGED (2026-06-12, after the GTAO horizon-black
+  fix above): the far-rim BLACK-stripe component shared that root and is
+  FIXED — grazing water hits the same bilateral collapse (verified:
+  lakeshore 8-yaw sweep 0 black rows, was 6/8 with solid RGB 0 bands).
+  The older diagnosis trail (min-reduced far field dips, SSR-miss
+  fallback at grazing fresnel) remains valid for residual NON-black
+  dimming; planar-lake pass stays queued as polish.
+  **NEW BUG SURFACED by the re-judge shot (NEXT IN QUEUE):** bm2
+  (dawn lake, alt 9, T 7.5) renders the near water as giant faceted
+  swells with bright white triangular shards at the frame edges
+  (shots/wip/bm2-rejudge.png). NOT this session's AO work — ?ablate=ao
+  renders identically (shots/wip/bm2-ablao.png) — and NOT present at
+  noon lakeshore framings (same lake, dead flat in this session's
+  sweeps: shots/wip/horizon-yaw*.png). Candidates: water clipmap
+  level-boundary geometry at the wetland margin ("water walls"/
+  staircase-shards gotcha family), wet-margin hummocks piercing the
+  surface, dawn-grazing fresnel on ripple-steep normals; could be
+  long-standing (bm2's mist used to soften the area) — bisect with
+  ?ablate=water / ?waterdbg ladder / T sweep at the bm2 pose.
 
 ## Key decisions log
 

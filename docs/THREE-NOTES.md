@@ -115,3 +115,20 @@
   leaves matrixWorld stale until the renderer's updateMatrixWorld; copies
   made in update callbacks must force `camera.updateMatrixWorld()` (also
   refreshes matrixWorldInverse) or read one-frame-old matrices.
+- **GTAONode horizon math degenerates at distance/grazing** (stock 0.184
+  carries both; fixed in our port, src/render/Gtao.ts): (1) once the
+  world-space radius projects below one depth texel, samples land on the
+  center's OWN texel, pass the |Δz| thickness test with quantization-
+  dominated directions (normalize(≈0)) and drive cosHorizons → 1 = "fully
+  occluded" → AO crushes to 0 on far grazing surfaces (flat fields near
+  the horizon, grazing water). Reject same-texel samples. (2) f32:
+  dot(viewDir, normalize(δ)) can read 1+ε → sqrt(1−cos²) = NaN; clamp the
+  horizon cosines.
+- **Joint-bilateral upsamplers must handle weight collapse explicitly**:
+  with w = exp2(−k·|Δz|) taps, grazing slopes make EVERY tap reject (a
+  half-res texel near the horizon spans tens of meters of view depth) and
+  acc/ε fabricates 0 — rendered as a black horizon band after the AO
+  multiply. Gate on wsum: full bilateral above a small support threshold
+  (bit-exact on healthy pixels), plain tap-average fallback below it. A
+  global additive weight floor is NOT equivalent — it perturbs the blend
+  on every partially-weighted pixel (printed a ~1% wash on a hero trunk).
