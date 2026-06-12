@@ -107,6 +107,88 @@ function passMaterial(part: ImpostorPart, pass: PassKind, camDist: number, radiu
   return mat;
 }
 
+/**
+ * Flood uncovered texels with the average of their nearest covered
+ * neighbors (BFS rings from the coverage boundary). The capture clears to
+ * transparent BLACK, so bilinear + mip taps straddling the alpha edge mix
+ * black into edge pixels — the dark outline that made impostors trivially
+ * distinguishable from real trees (feedback 2.5). Alpha is untouched: it
+ * stays the coverage/cutout signal.
+ */
+function dilateRgb(px: Uint8Array, covered: Uint8Array, tile: number): void {
+  const n = tile * tile;
+  const filled = covered.slice();
+  const queued = new Uint8Array(n);
+  const qx = new Int32Array(n);
+  const qy = new Int32Array(n);
+  let qh = 0;
+  let qt = 0;
+  const push = (x: number, y: number): void => {
+    const i = y * tile + x;
+    if (filled[i] || queued[i] || qt >= n) return;
+    queued[i] = 1;
+    qx[qt] = x;
+    qy[qt] = y;
+    qt++;
+  };
+  for (let y = 0; y < tile; y++) {
+    for (let x = 0; x < tile; x++) {
+      if (filled[y * tile + x]) continue;
+      let touch = false;
+      for (let dy = -1; dy <= 1 && !touch; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= tile || ny >= tile) continue;
+          if (filled[ny * tile + nx]) {
+            touch = true;
+            break;
+          }
+        }
+      }
+      if (touch) push(x, y);
+    }
+  }
+  while (qh < qt) {
+    const x = qx[qh] as number;
+    const y = qy[qh] as number;
+    qh++;
+    const i = y * tile + x;
+    queued[i] = 0;
+    if (filled[i]) continue;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let cnt = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= tile || ny >= tile) continue;
+        const j = ny * tile + nx;
+        if (!filled[j]) continue;
+        r += px[j * 4] as number;
+        g += px[j * 4 + 1] as number;
+        b += px[j * 4 + 2] as number;
+        cnt++;
+      }
+    }
+    if (cnt === 0) continue;
+    px[i * 4] = Math.round(r / cnt);
+    px[i * 4 + 1] = Math.round(g / cnt);
+    px[i * 4 + 2] = Math.round(b / cnt);
+    filled[i] = 1;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= tile || ny >= tile) continue;
+        push(nx, ny);
+      }
+    }
+  }
+}
+
 export async function captureImpostor(
   renderer: Renderer,
   parts: ImpostorPart[],
@@ -167,6 +249,16 @@ export async function captureImpostor(
       const alb = out.albedo as Uint8Array;
       const nrm = out.normal as Uint8Array;
       const dep = out.depth as Uint8Array;
+      // RGB dilation into the empty space (per tile — views must not
+      // bleed into each other): albedo, normals and depth all flood so
+      // edge taps and far mips read leaf color, not clear-black
+      const cover = new Uint8Array(tile * tile);
+      for (let ci = 0; ci < tile * tile; ci++) {
+        cover[ci] = (alb[ci * 4 + 3] as number) > 8 ? 1 : 0;
+      }
+      dilateRgb(alb, cover, tile);
+      dilateRgb(nrm, cover, tile);
+      dilateRgb(dep, cover, tile);
       for (let py = 0; py < tile; py++) {
         const dstRow = ((gy * tile + py) * atlasRes + gx * tile) * 4;
         const srcRow = py * tile * 4;
