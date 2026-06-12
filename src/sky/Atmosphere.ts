@@ -58,7 +58,10 @@ const BETA_M_S = 9.6e-3;
 const BETA_M_E = 1.07e-2;
 const BETA_O: [number, number, number] = [0.65e-3, 1.881e-3, 0.085e-3];
 const MIE_G = 0.8;
-const SUN_ANGULAR_RADIUS = 0.00465;
+// 3x the physical 0.265° radius: games oversize the disc — at true scale
+// it reads as a tiny dot (user feedback batch 2 item 10). Disc radiance is
+// dimmed below to keep total flux (and the bloom response) in range.
+const SUN_ANGULAR_RADIUS = 0.014;
 
 const T_W = 256;
 const T_H = 64;
@@ -354,7 +357,7 @@ export class Atmosphere {
     const sunDirN = this.sunDir.normalize();
     const cosA = dir.dot(sunDirN);
     const cosR = Math.cos(SUN_ANGULAR_RADIUS);
-    const inDisc = smoothstep(cosR, cosR + 0.00004, cosA);
+    const inDisc = smoothstep(cosR, cosR + 0.00008, cosA);
     const centerT = clamp(
       cosA.sub(cosR).div(1 - cosR),
       0,
@@ -362,7 +365,7 @@ export class Atmosphere {
     );
     const limb = pow(centerT, 0.45).mul(0.55).add(0.45);
     const tSun = this.sampleTransmittance(float(RG + 0.35), clamp(sunDirN.y, -1, 1));
-    const sunL = tSun.mul(limb).mul(inDisc).mul(120 * SUN_E);
+    const sunL = tSun.mul(limb).mul(inDisc).mul(50 * SUN_E);
     return sky.add(sunL);
   }
 
