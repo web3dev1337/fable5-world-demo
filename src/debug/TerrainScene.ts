@@ -58,8 +58,6 @@ export async function buildTerrainScene(ctx: WorldContext): Promise<void> {
   const sunSky = new SunSky(engine, bootTod);
   await sunSky.init(engine.renderer);
   (engine as unknown as { sunSky?: SunSky }).sunSky = sunSky;
-  // tooling probe handle (tools/probe-state.ts) — light/scene state triage
-  (window as unknown as { __laasDbg?: unknown }).__laasDbg = { engine, sunSky };
 
   // vegetation/rock placement (Phase 5): GPU clustered-Poisson scatter +
   // canopy coverage map — BEFORE the probe field (probes ray-march the bare
