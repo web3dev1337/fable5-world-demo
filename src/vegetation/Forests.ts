@@ -129,6 +129,19 @@ export class Forests {
   private reading = false;
   private frame = 0;
   private hud: Record<string, number> = {};
+  // pose-gate (see GroundRing): the cull is a pure function of the camera +
+  // cascade frusta over a static world, so its indirect draw args are
+  // bit-identical when every cull input is unchanged — skip the dispatch and
+  // reuse last frame's args. Bit-exact compare ⇒ zero visual difference.
+  private lastCamX = NaN;
+  private lastCamY = NaN;
+  private lastCamZ = NaN;
+  private lastPlanes = new Float32Array(6 * 4);
+  private lastCascPlanes = new Float32Array(6 * CASCADES * 4);
+  // motion cadence (see GroundRing): re-cull at most every other frame while
+  // moving — a 1-frame-stale visible set only lags instances at the cull ring
+  // boundary by one frame, imperceptible during motion.
+  private framesSinceCull = 99;
 
   constructor(
     private hf: Heightfield,
@@ -469,8 +482,53 @@ export class Forests {
         }
       }
     }
-    for (const k of this.kernels) {
-      renderer.compute(k as Parameters<Renderer['compute']>[0]);
+    let changed =
+      camera.position.x !== this.lastCamX ||
+      camera.position.y !== this.lastCamY ||
+      camera.position.z !== this.lastCamZ;
+    this.lastCamX = camera.position.x;
+    this.lastCamY = camera.position.y;
+    this.lastCamZ = camera.position.z;
+    const mainArr = this.planesU.array as Vector4[];
+    for (let p = 0; p < 6; p++) {
+      const v = mainArr[p] as Vector4;
+      const b = p * 4;
+      if (
+        v.x !== this.lastPlanes[b] ||
+        v.y !== this.lastPlanes[b + 1] ||
+        v.z !== this.lastPlanes[b + 2] ||
+        v.w !== this.lastPlanes[b + 3]
+      ) {
+        changed = true;
+      }
+      this.lastPlanes[b] = v.x;
+      this.lastPlanes[b + 1] = v.y;
+      this.lastPlanes[b + 2] = v.z;
+      this.lastPlanes[b + 3] = v.w;
+    }
+    const cascArr = this.planesCsmU.array as Vector4[];
+    for (let p = 0; p < 6 * CASCADES; p++) {
+      const v = cascArr[p] as Vector4;
+      const b = p * 4;
+      if (
+        v.x !== this.lastCascPlanes[b] ||
+        v.y !== this.lastCascPlanes[b + 1] ||
+        v.z !== this.lastCascPlanes[b + 2] ||
+        v.w !== this.lastCascPlanes[b + 3]
+      ) {
+        changed = true;
+      }
+      this.lastCascPlanes[b] = v.x;
+      this.lastCascPlanes[b + 1] = v.y;
+      this.lastCascPlanes[b + 2] = v.z;
+      this.lastCascPlanes[b + 3] = v.w;
+    }
+    this.framesSinceCull++;
+    if (changed && this.framesSinceCull >= 2) {
+      for (const k of this.kernels) {
+        renderer.compute(k as Parameters<Renderer['compute']>[0]);
+      }
+      this.framesSinceCull = 0;
     }
     this.frame++;
     if (this.frame % 90 === 0 && !this.reading) {

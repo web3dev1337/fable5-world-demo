@@ -98,6 +98,20 @@ export class GroundRing {
   private frame = 0;
   private counters!: ReturnType<StorageBufferNode<'uint'>['toAtomic']>;
   private caps: number[] = [...GRASS_CAPS, ...DEB_CAPS, FAR_CAP];
+  // pose-gate: the cull is a pure function of camera position + frustum over a
+  // static world (no time/wind term), so its compact draw lists are identical
+  // across frames where the pose is unchanged — skip the ~10M-thread dispatch
+  // and reuse last frame's lists. Bit-exact compare ⇒ zero visual difference.
+  private lastCamX = NaN;
+  private lastCamY = NaN;
+  private lastCamZ = NaN;
+  private lastPlanes = new Float32Array(24);
+  // motion cadence: re-cull at most every other frame while moving. The ring is
+  // a camera-following clipmap; a 1-frame-stale visible set lags only the far
+  // ring edge by one frame (≈6 cm at walk speed) — same imperceptible-latency
+  // principle CsmCached already uses for far shadow cascades. Resumes instantly
+  // from a static hold (framesSinceCull is large by then).
+  private framesSinceCull = 99;
 
   constructor(
     private hf: Heightfield,
@@ -290,13 +304,38 @@ export class GroundRing {
     this.projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projView);
     const arr = this.planesU.array as Vector4[];
+    let changed =
+      camera.position.x !== this.lastCamX ||
+      camera.position.y !== this.lastCamY ||
+      camera.position.z !== this.lastCamZ;
     for (let p = 0; p < 6; p++) {
       const pl = this.frustum.planes[p];
       if (!pl) continue;
-      (arr[p] as Vector4).set(pl.normal.x, pl.normal.y, pl.normal.z, pl.constant);
+      const v = arr[p] as Vector4;
+      v.set(pl.normal.x, pl.normal.y, pl.normal.z, pl.constant);
+      const b = p * 4;
+      if (
+        v.x !== this.lastPlanes[b] ||
+        v.y !== this.lastPlanes[b + 1] ||
+        v.z !== this.lastPlanes[b + 2] ||
+        v.w !== this.lastPlanes[b + 3]
+      ) {
+        changed = true;
+      }
+      this.lastPlanes[b] = v.x;
+      this.lastPlanes[b + 1] = v.y;
+      this.lastPlanes[b + 2] = v.z;
+      this.lastPlanes[b + 3] = v.w;
     }
-    for (const k of this.kernels) {
-      renderer.compute(k as Parameters<Renderer['compute']>[0]);
+    this.lastCamX = camera.position.x;
+    this.lastCamY = camera.position.y;
+    this.lastCamZ = camera.position.z;
+    this.framesSinceCull++;
+    if (changed && this.framesSinceCull >= 2) {
+      for (const k of this.kernels) {
+        renderer.compute(k as Parameters<Renderer['compute']>[0]);
+      }
+      this.framesSinceCull = 0;
     }
     this.frame++;
     if (this.frame % 90 === 30 && !this.reading) {
