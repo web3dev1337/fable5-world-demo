@@ -187,9 +187,11 @@ export class Heightfield {
     });
 
     progress(0.93, 'terrain: height readback for camera');
-    const ab = await renderer.getArrayBufferAsync(hf.height.value);
+    const [ab, wab] = await Promise.all([
+      renderer.getArrayBufferAsync(hf.height.value),
+      renderer.getArrayBufferAsync(hf.waterY.value),
+    ]);
     hf.cpuHeights = new Float32Array(ab);
-    const wab = await renderer.getArrayBufferAsync(hf.waterY.value);
     hf.cpuWaterY = new Float32Array(wab);
     return hf;
   }
