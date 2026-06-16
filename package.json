@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "shoot": "tsx tools/shoot.ts",
     "compare": "tsx tools/compare.ts",
-    "battery": "tsx tools/battery.ts"
+    "fps": "tsx tools/fps-soak.ts"
   },
   "dependencies": {
     "three": "0.184.0"
