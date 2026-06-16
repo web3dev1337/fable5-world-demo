@@ -59,6 +59,8 @@ const SPLIT_K = 2.1;
 const MIN_TILE = 64;
 /** rough/steep tiles may refine below MIN_TILE (cliff close-ups) */
 const MIN_TILE_ROUGH = 32;
+/** range-pyramid base resolution: one cell = MIN_TILE meters across the world */
+const RANGE_BASE = WORLD_SIZE / MIN_TILE;
 
 export class TerrainTiles {
   readonly mesh: InstancedMesh;
@@ -389,7 +391,7 @@ export class TerrainTiles {
     const heights = this.hf.cpuHeights;
     if (!heights) return;
     const res = Math.sqrt(heights.length) | 0;
-    const base = 64; // cells per side; one cell = MIN_TILE meters
+    const base = RANGE_BASE; // cells per side; one cell = MIN_TILE meters
     const cellPx = res / base;
     const l0 = new Float32Array(base * base);
     for (let cy = 0; cy < base; cy++) {
@@ -433,7 +435,7 @@ export class TerrainTiles {
   private heightRange(ox: number, oz: number, size: number): number {
     if (this.rangePyr.length === 0) return 0;
     const lvl = Math.max(0, Math.min(Math.round(Math.log2(Math.max(size, MIN_TILE) / MIN_TILE)), this.rangePyr.length - 1));
-    const side = 64 >> lvl;
+    const side = RANGE_BASE >> lvl;
     const cell = WORLD_SIZE / side;
     const cx = Math.max(0, Math.min(Math.floor((ox + WORLD_SIZE / 2) / cell), side - 1));
     const cy = Math.max(0, Math.min(Math.floor((oz + WORLD_SIZE / 2) / cell), side - 1));
