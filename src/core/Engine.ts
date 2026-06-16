@@ -8,6 +8,7 @@ import { ACESFilmicToneMapping, PerspectiveCamera, Scene } from 'three';
 import { TimestampQuery, WebGPURenderer } from 'three/webgpu';
 import { buildRequiredLimits } from './Diagnostics';
 import { installMaterialKeyMemo } from '../render/ThreePatches';
+import { installVegRefreshControl, tickVegRefresh } from '../render/StaticRefresh';
 import { installPositionInvariance } from '../render/VegPrepass';
 import { GpuProfiler } from './GpuProfiler';
 import type { EngineStats, LaasHooks } from './Hooks';
@@ -115,6 +116,7 @@ export class Engine {
     // shadow-pass render objects re-hash their material node graph every
     // frame (see ThreePatches) — memoize per material
     installMaterialKeyMemo(renderer);
+    installVegRefreshControl(renderer);
 
     window.addEventListener('resize', () => {
       engine.camera.aspect = window.innerWidth / window.innerHeight;
@@ -159,6 +161,10 @@ export class Engine {
     const c0 = performance.now();
     for (const fn of this.updateFns) fn(dt, this.worldTime);
     const c1 = performance.now();
+
+    // veg refresh control: advance the per-frame flush clock so the first draw
+    // of each shared veg bind group re-uploads this frame's jitter/time/camera.
+    tickVegRefresh();
 
     if (this.post) {
       this.post.meter(this.renderer); // exposure feedback from last frame's pass

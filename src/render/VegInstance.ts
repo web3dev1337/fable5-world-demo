@@ -30,6 +30,7 @@ import {
   smoothstep,
   time,
   uint,
+  uniform,
   varying,
   vec2,
   vec3,
@@ -99,7 +100,13 @@ export interface FetchedInstance {
 
 /** vertex-stage fetch of the instance record through the compact list */
 export function fetchInstance(bind: InstanceBinding): FetchedInstance {
-  const base = runiform(uint(bind.groupBase));
+  // object-group (NOT renderGroup): the compacted-list base is a per-draw
+  // CONSTANT, so it must not pollute the shared renderGroup buffer — keeping
+  // it object-local lets every veg draw share ONE renderGroup buffer (camera +
+  // TRAA jitter + vegViewPos + wind), which is what lets StaticRefresh flush
+  // that buffer from a single sentinel draw and skip the rest. The object-group
+  // re-validation cost is paid only by the few sentinels, not all ~700 draws.
+  const base = uniform(uint(bind.groupBase));
   const slot = bind.compact.element(
     instanceIndex.add(base as unknown as NU),
   ) as unknown as NU;

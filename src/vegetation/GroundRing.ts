@@ -58,6 +58,7 @@ import {
 } from 'three/tsl';
 import { canopyAt } from '../gpu/passes/Scatter';
 import { rockMaterial } from '../render/VegMaterials';
+import { markVegRefresh } from '../render/StaticRefresh';
 import { depthPrepassTwin } from '../render/VegPrepass';
 import type { NU, NV3 } from '../gpu/TSLTypes';
 import type { Heightfield } from '../world/Heightfield';
@@ -265,6 +266,7 @@ export class GroundRing {
       mesh.frustumCulled = false;
       mesh.castShadow = false;
       mesh.receiveShadow = true;
+      markVegRefresh(mesh);
       this.group.add(mesh);
       // grass layers shade 2-8x per pixel without a prepass (random draw
       // order defeats early-Z); twin shares geometry = same indirect slot
@@ -272,13 +274,13 @@ export class GroundRing {
         new URLSearchParams(window.location.search).get('prepass') === '0';
       if (!noPrepass && (spec.g <= 2 || spec.g === 8)) {
         const matS = spec.mat as unknown as { positionNode: unknown; maskNode: unknown };
-        this.prepassGroup.add(
-          depthPrepassTwin(mesh, {
-            positionNode: matS.positionNode,
-            maskNode: matS.maskNode ?? undefined,
-            side: DoubleSide,
-          }),
-        );
+        const twin = depthPrepassTwin(mesh, {
+          positionNode: matS.positionNode,
+          maskNode: matS.maskNode ?? undefined,
+          side: DoubleSide,
+        });
+        markVegRefresh(twin);
+        this.prepassGroup.add(twin);
       }
     }
     const indirectStore = storage(indirectAttr, 'uint', D * 5);
