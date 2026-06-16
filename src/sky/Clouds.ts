@@ -103,7 +103,14 @@ export class Clouds {
   }
 
   async init(renderer: Renderer): Promise<void> {
-    // --- base: perlin-worley remap (tileable enough via domain fract) --------
+    await this.bakeBaseNoise(renderer);
+    await this.bakeDetailNoise(renderer);
+    await this.bakeWeather(renderer);
+    await this.bakeShadow(renderer);
+  }
+
+  /** base 96³ perlin-worley remap (tileable enough via domain fract) */
+  private async bakeBaseNoise(renderer: Renderer): Promise<void> {
     const N = BASE_RES;
     const baseK = Fn(() => {
       const i = instanceIndex;
@@ -126,7 +133,10 @@ export class Clouds {
     })().compute(N * N * N);
     baseK.setName('cloudBaseNoise');
     await renderer.computeAsync(baseK);
+  }
 
+  /** detail 32³ worley erosion field */
+  private async bakeDetailNoise(renderer: Renderer): Promise<void> {
     const M = DETAIL_RES;
     const detailK = Fn(() => {
       const i = instanceIndex;
@@ -144,8 +154,10 @@ export class Clouds {
     })().compute(M * M * M);
     detailK.setName('cloudDetailNoise');
     await renderer.computeAsync(detailK);
+  }
 
-    // --- weather field bake (wraps at WEATHER_WORLD) ---------------------------
+  /** weather/coverage field bake (wraps at WEATHER_WORLD) */
+  private async bakeWeather(renderer: Renderer): Promise<void> {
     const W = WEATHER_RES;
     const weatherK = Fn(() => {
       const i = instanceIndex;
@@ -163,8 +175,13 @@ export class Clouds {
     })().compute(W * W);
     weatherK.setName('cloudWeather');
     await renderer.computeAsync(weatherK);
+  }
 
-    // --- cloud shadow map kernel (re-run on sun/ToD change) -------------------
+  /**
+   * Build the top-down shadow map kernel, store it for periodic re-bakes
+   * (refreshShadow / tick re-run the SAME kernel), and bake it once.
+   */
+  private async bakeShadow(renderer: Renderer): Promise<void> {
     const S = SHADOW_RES;
     const shadowK = Fn(() => {
       const i = instanceIndex;

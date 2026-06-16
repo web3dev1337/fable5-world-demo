@@ -31,14 +31,17 @@
  *           impostors beyond (4-tile view blend, relit — D-4 runtime)
  *   understory: single ring with per-class max distance
  *   extras: boulders/slabs swap to low-detail rock at 120 m, live to 700 m
+ *
+ * This file is a thin orchestrator: the compact-region index math and named
+ * layout constants live in forests/layout.ts (shared with the cull kernel so
+ * the two never drift), the crown shadow proxy in forests/crownProxy.ts, the
+ * draw/material wiring in forests/drawSetup.ts, and the TSL cull/LOD kernels
+ * in forests/cullKernels.ts.
  */
 
 import {
-  BufferAttribute,
-  BufferGeometry,
   Color,
   Group,
-  IcosahedronGeometry,
   Mesh,
   Vector3,
   Vector4,
@@ -55,205 +58,48 @@ import {
 } from 'three/webgpu';
 import { IrradianceNode } from 'three/webgpu';
 import {
-  Fn,
-  If,
-  Return,
-  atomicAdd,
-  atomicLoad,
-  atomicStore,
-  float,
-  instanceIndex,
   instancedArray,
-  int,
   normalWorld,
-  positionLocal,
   positionWorld,
-  smoothstep,
   storage,
-  uint,
   uniform,
   uniformArray,
   varying,
-  vec2,
   vec3,
   vec4,
 } from 'three/tsl';
 import type { Heightfield } from '../world/Heightfield';
-import { hash12 } from '../gpu/noise/NoiseTSL';
 import type { ProbeGI } from '../gpu/passes/ProbeGI';
 import { canopyAt, type ScatterLayer, type ScatterResult } from '../gpu/passes/Scatter';
 import { impostorQuad, impostorRuntimeMaterial } from '../render/ImpostorRuntime';
-import { instanceVeg, updateVegViewPos, type RingFade } from '../render/VegInstance';
-import { depthPrepassTwin } from '../render/VegPrepass';
-import type { NF, NI, NU, NV3, NV4 } from '../gpu/TSLTypes';
+import { instanceVeg, updateVegViewPos } from '../render/VegInstance';
+import type { NF, NV3 } from '../gpu/TSLTypes';
 import type { VegLib } from './VegLibrary';
-
-// ring distances (m) + dither bands (user feedback: transitions read too
-// close — full-card trees hold to 150 m, impostors start at 460 m).
-// Hero ring 0 (≤26 m): full bark + cards + REAL mesh leaves — the nanite-
-// equivalence near field (spec floor: hero tree ≥100k tris).
-const R0_FAR = 26;
-const BAND0 = 5;
-const R1_FAR = 150;
-const BAND1 = 14;
-const R2_FAR = 460;
-const BAND2 = 36;
-const EX_R1_FAR = 120;
-const EX_BAND = 15;
-
-// per-group compact-region capacities
-const CAP_HERO = 48;
-const CAP_TREE_R1 = 6144;
-const CAP_TREE_R2 = 8192;
-const CAP_IMPOSTOR = 49152;
-const CAP_UNDER = 4096;
-const CAP_EX_R1 = 1024;
-const CAP_EX_R2 = 2048;
-
-const MAIN_GROUPS = 170;
-/**
- * Per-cascade caster groups: trees r1/r2 (48) + hero r0 (24) + extras/stones
- * (64) + impostor-band crown proxies per species (6). The impostor band
- * casts so tree shadows don't end in a hard circle at the R2 boundary —
- * they fade out by IMP_CAST_FAR instead.
- */
-const CASC_LOCALS = 142;
-const CASCADES = 4;
-const GROUPS = MAIN_GROUPS + CASCADES * CASC_LOCALS;
-/** crown-proxy shadows fade out across this band (m from camera) */
-const IMP_CAST_FADE0 = 620;
-const IMP_CAST_FAR = 1100;
-
-function groupOf(cls: number, variant: number, ring: 0 | 1 | 2 | 3): number {
-  if (cls < 6) {
-    if (ring === 0) return 146 + cls * 4 + variant;
-    if (ring === 3) return 48 + cls;
-    return (cls * 4 + variant) * 2 + (ring - 1);
-  }
-  if (cls < 15) return 54 + (cls - 8) * 4 + variant;
-  const pe = (cls - 16) * 4 + variant;
-  return 82 + pe * 2 + (ring - 1);
-}
-
-/**
- * Caster-group index for cascade c. Local layout:
- *   0..47   tree pools × rings r1/r2  (pool*2 + ring-1)
- *   48..71  hero r0 per pool
- *   72..135 extras/stones pe × rings  (72 + pe*2 + ring-1)
- */
-function casterGroupOf(
-  c: number,
-  cls: number,
-  variant: number,
-  ring: 0 | 1 | 2 | 3,
-): number {
-  const base = MAIN_GROUPS + c * CASC_LOCALS;
-  if (cls < 6) {
-    if (ring === 3) return base + 136 + cls;
-    const pool = cls * 4 + variant;
-    if (ring === 0) return base + 48 + pool;
-    return base + pool * 2 + (ring - 1);
-  }
-  const pe = (cls - 16) * 4 + variant;
-  return base + 72 + pe * 2 + (ring - 1);
-}
-
-function capOf(g: number): number {
-  if (g >= MAIN_GROUPS) {
-    // caster regions: a cascade box covers a slice of the frustum, so the
-    // worst case is well under the main-view caps
-    const local = (g - MAIN_GROUPS) % CASC_LOCALS;
-    if (local >= 136) return 8192; // impostor-band crown proxies (per cls)
-    if (local < 48) return local % 2 === 0 ? 3072 : 6144; // tree r1/r2
-    if (local < 72) return CAP_HERO;
-    const pe = (local - 72) >> 1;
-    const cls = 16 + (pe >> 2);
-    const isR1 = (local - 72) % 2 === 0;
-    if (cls < 20) return isR1 ? 512 : 1024; // extras
-    if (cls === 20) return isR1 ? 2048 : 12288; // StoneL → 900 m
-    if (cls === 21) return isR1 ? 4096 : 8192; // StoneM
-    if (cls === 22) return isR1 ? 12288 : 64; // StoneS — single ring
-    return 4096; // Branch
-  }
-  if (g < 48) return g % 2 === 0 ? CAP_TREE_R1 : CAP_TREE_R2;
-  if (g < 54) return CAP_IMPOSTOR;
-  if (g < 82) return CAP_UNDER;
-  if (g >= 146) return CAP_HERO;
-  if (g < 114) return (g - 82) % 2 === 0 ? CAP_EX_R1 : CAP_EX_R2;
-  // size-stratified stones/branches (cls 20–23)
-  const cls = 16 + ((g - 82) >> 3);
-  const isR1 = (g - 82) % 2 === 0;
-  if (cls === 20) return isR1 ? 4096 : 24576; // StoneL → 900 m
-  if (cls === 21) return isR1 ? 8192 : 16384; // StoneM → 280 m
-  if (cls === 22) return isR1 ? 24576 : 64; // StoneS — single ring
-  return 8192; // Branch
-}
-
-/**
- * Crown shadow density per tree class (spruce/pine/beech/birch/karst/snag).
- * Real closed canopy transmits 2–5% at noon; hollow card-shell crowns leak
- * 40%+ through their alpha gradients and PCSS averages the speckle into a
- * flat half-lit wash (no dapple, no dark interior). The shadow proxy core
- * (dithered to this density) restores bulk occlusion; cards keep the edges
- * ragged in the near ring. Snag crowns are bare — no core.
- */
-const CROWN_SHADOW_DENSITY = [0.9, 0.84, 0.92, 0.74, 0.85, 0] as const;
-
-/** crown proxy dims, FITTED to a pool's actual ring geometry (meters, scale 1) */
-interface CrownDims {
-  cy: number;
-  ry: number;
-  rxz: number;
-}
-
-/**
- * Shadow-proxy tree: 80-tri ellipsoid crown + 12-tri trunk prism, fitted to
- * the pool's own geometry bounds (class-max dims made small variants throw
- * giant blob shadows — user-reported). This is the ONLY tree caster beyond
- * R1 (a cascade texel out there is ≥0.5 m — card raggedness is invisible)
- * and the bulk-density core inside R1's card edges.
- */
-function crownProxyGeometry(d: CrownDims): BufferGeometry {
-  // PolyhedronGeometry is non-indexed: 80 faces × 3 verts at detail 1
-  const core = new IcosahedronGeometry(1, 1);
-  const cpos = core.attributes.position as BufferAttribute;
-  const cy = d.cy;
-  const nCore = cpos.count;
-  const tr = 0.035 * d.rxz + 0.03;
-  const merged = new Float32Array(nCore * 3 + 6 * 3);
-  for (let i = 0; i < nCore; i++) {
-    merged[i * 3] = cpos.getX(i) * d.rxz;
-    merged[i * 3 + 1] = cpos.getY(i) * d.ry + cy;
-    merged[i * 3 + 2] = cpos.getZ(i) * d.rxz;
-  }
-  // trunk prism: 3 quads, base→crown center
-  const idx: number[] = [];
-  for (let i = 0; i < nCore; i++) idx.push(i);
-  for (let k = 0; k < 3; k++) {
-    const a = (k / 3) * Math.PI * 2;
-    const o = (nCore + k * 2) * 3;
-    merged[o] = Math.cos(a) * tr;
-    merged[o + 1] = 0;
-    merged[o + 2] = Math.sin(a) * tr;
-    merged[o + 3] = Math.cos(a) * tr * 0.6;
-    merged[o + 4] = cy;
-    merged[o + 5] = Math.sin(a) * tr * 0.6;
-  }
-  for (let k = 0; k < 3; k++) {
-    const n = (k + 1) % 3;
-    idx.push(
-      nCore + k * 2, nCore + n * 2, nCore + k * 2 + 1,
-      nCore + n * 2, nCore + n * 2 + 1, nCore + k * 2 + 1,
-    );
-  }
-  const nrm = new Float32Array(merged.length);
-  for (let i = 0; i < nrm.length; i += 3) nrm[i + 1] = 1;
-  const g = new BufferGeometry();
-  g.setAttribute('position', new BufferAttribute(merged, 3));
-  g.setAttribute('normal', new BufferAttribute(nrm, 3));
-  g.setIndex(idx);
-  return g;
-}
+import {
+  CASCADES,
+  EXTRAS_BASE,
+  GROUPS,
+  IMPOSTOR_BASE,
+  MAIN_GROUPS,
+  TREE_MAIN_BASE,
+  UNDER_BASE,
+  capOf,
+  casterGroupOf,
+  groupOf,
+} from './forests/layout';
+import {
+  CROWN_SHADOW_DENSITY,
+  crownProxyGeometry,
+  type CrownDims,
+} from './forests/crownProxy';
+import {
+  fadeFor,
+  geoView,
+  makeAddDraw,
+  proxyCasterMat,
+  type DrawSpec,
+} from './forests/drawSetup';
+import { buildCullKernels } from './forests/cullKernels';
 
 export class Forests {
   readonly group = new Group();
@@ -348,75 +194,19 @@ export class Forests {
     const clsBuf = storage(new StorageBufferAttribute(clsInfo, 4), 'vec4', 24);
 
     // ---- draws ---------------------------------------------------------------
-    interface DrawSpec {
-      group: number;
-      indexCount: number;
-    }
     const draws: DrawSpec[] = [];
     const meshes: Mesh[] = [];
 
     const prepassQ = new URLSearchParams(window.location.search).get('prepass');
     const noPrepass = prepassQ === '0' || prepassQ === 'grass';
-    const addDraw = (
-      geo: import('three').BufferGeometry,
-      mat: MeshStandardNodeMaterial,
-      g: number,
-      tris: number,
-      shadowLayer: number | null = null,
-    ): void => {
-      const indexCount = geo.index ? geo.index.count : geo.attributes.position?.count ?? 0;
-      draws.push({ group: g, indexCount });
-      const mesh = new Mesh(geo, mat);
-      mesh.frustumCulled = false;
-      if (shadowLayer === null) {
-        // visible draw — casting is owned by the per-cascade sibling meshes
-        this.groupTris[g] += tris;
-        mesh.castShadow = false;
-        mesh.receiveShadow = true;
-        // depth prepass for CARD parts only: crowns shade 3-8x per covered
-        // pixel (alpha-tested cutouts defeat early-Z); opaque bark/rock
-        // overdraw is shallow and each twin costs a CPU draw (~29 us) +
-        // doubled vertex wind, so twinning everything LOST wall time.
-        // (A DoubleSide quad rasterizes each triangle ONCE — no duplicate
-        // face depth-ties; EQUAL is safe. Verified vs no-prepass at a
-        // frame-aligned capture: differences at the deterministic floor.)
-        if (!noPrepass && mat.alphaTest > 0) {
-          const matS = mat as unknown as {
-            positionNode: unknown;
-            maskNode: unknown;
-            opacityNode: unknown;
-          };
-          this.prepassGroup.add(
-            depthPrepassTwin(mesh, {
-              positionNode: matS.positionNode,
-              maskNode: matS.maskNode ?? undefined,
-              ...(mat.alphaTest > 0
-                ? { opacityNode: matS.opacityNode, alphaTest: mat.alphaTest }
-                : {}),
-              side: mat.side,
-            }),
-          );
-        }
-      } else {
-        // shadow-only caster: lives on the cascade's layer, so ONLY that
-        // cascade's shadow camera ever renders it
-        mesh.castShadow = true;
-        mesh.receiveShadow = false;
-        mesh.layers.set(shadowLayer);
-      }
-      meshes.push(mesh);
-      this.group.add(mesh);
-    };
-
-    /** geometry view sharing attributes/index but with its own indirect slot */
-    const geoView = (src: import('three').BufferGeometry): BufferGeometry => {
-      const g = new BufferGeometry();
-      for (const [name, attr] of Object.entries(src.attributes)) {
-        g.setAttribute(name, attr as import('three').BufferAttribute);
-      }
-      if (src.index) g.setIndex(src.index);
-      return g;
-    };
+    const addDraw = makeAddDraw({
+      draws,
+      meshes,
+      groupTris: this.groupTris,
+      group: this.group,
+      prepassGroup: this.prepassGroup,
+      noPrepass,
+    });
 
     const layerOf = (cls: number): ScatterLayer =>
       cls < 6
@@ -426,62 +216,6 @@ export class Forests {
           : cls < 20
             ? this.scatter.extras
             : this.scatter.stones;
-
-    /**
-     * Shadow-proxy caster material: world-anchored hash dither (screen-space
-     * IGN swims when CSM refits its boxes — user-visible shadow flicker) at
-     * species density, with a crown-edge falloff so the rim breaks up into
-     * a ragged crown instead of a solid oval. Impostor-band proxies fade out
-     * toward IMP_CAST_FAR (fade distance uses vegViewPos via instanceVeg).
-     */
-    const proxyCasterMat = (
-      bind: Parameters<typeof instanceVeg>[1],
-      density: number,
-      dims: CrownDims,
-      impostorBand: boolean,
-    ): MeshStandardNodeMaterial => {
-      const pmat = new MeshStandardNodeMaterial();
-      const handles = instanceVeg(pmat, bind);
-      const e = positionLocal
-        .sub(vec3(0, dims.cy, 0))
-        .div(vec3(dims.rxz, dims.ry, dims.rxz))
-        .length();
-      let dens: NF = float(density).mul(
-        float(1).sub(e.pow(3).mul(0.55)),
-      );
-      if (impostorBand) {
-        dens = dens.mul(
-          float(1).sub(smoothstep(IMP_CAST_FADE0, IMP_CAST_FAR - 50, handles.dist)),
-        );
-      }
-      (pmat as unknown as { maskShadowNode: unknown }).maskShadowNode = hash12(
-        positionWorld.xz.mul(13.73).add(positionWorld.yy.mul(5.19)),
-      ).lessThan(dens);
-      return pmat;
-    };
-
-    const fadeFor = (cls: number, ring: 0 | 1 | 2 | 3): RingFade => {
-      if (cls < 6) {
-        if (ring === 0) return { fadeOutAt: R0_FAR, band: BAND0 };
-        if (ring === 1)
-          return { fadeInAt: R0_FAR, inBand: BAND0, fadeOutAt: R1_FAR, band: BAND1 };
-        // bands MUST match across each boundary (in-band here = out-band of
-        // the nearer ring) or the complementary dither doesn't partition
-        // pixels and holes reappear — hence inBand: ring2's out edge pairs
-        // with the impostor's BAND2 while its in edge pairs with BAND1.
-        if (ring === 2)
-          return { fadeInAt: R1_FAR, inBand: BAND1, fadeOutAt: R2_FAR, band: BAND2 };
-        return { fadeInAt: R2_FAR, band: BAND2 };
-      }
-      const maxD = this.lib.clsMaxDist[cls] ?? 150;
-      if (cls < 15) return { fadeOutAt: maxD - 15, band: 15 };
-      const hasR2 = cls === 18 || cls === 19 || cls === 20 || cls === 21 || cls === 23;
-      if (ring === 1)
-        return hasR2
-          ? { fadeOutAt: EX_R1_FAR, band: EX_BAND }
-          : { fadeOutAt: maxD - 20, band: 20 };
-      return { fadeInAt: EX_R1_FAR, fadeOutAt: maxD - 20, band: EX_BAND };
-    };
 
     for (const pool of lib.pools) {
       const layer = layerOf(pool.cls);
@@ -552,7 +286,7 @@ export class Forests {
             bufB: layer.bufB,
             compact: this.compact,
             groupBase: offsets[g] ?? 0,
-            fade: fadeFor(pool.cls, ring),
+            fade: fadeFor(pool.cls, ring, this.lib.clsMaxDist),
             wind: windBind,
           });
           this.patchGI(mat);
@@ -645,7 +379,7 @@ export class Forests {
         bufB: this.scatter.trees.bufB,
         compact: this.compact,
         groupBase: offsets[g] ?? 0,
-        fade: fadeFor(cls, 3),
+        fade: fadeFor(cls, 3, this.lib.clsMaxDist),
       });
       this.patchGI(mat);
       addDraw(impostorQuad(), mat, g, 2);
@@ -668,242 +402,21 @@ export class Forests {
     const drawGroupBuf = storage(new StorageBufferAttribute(drawGroups, 1), 'uint', D);
 
     // ---- kernels ---------------------------------------------------------------
-    const counters = this.counters;
-    const compact = this.compact;
-    const camU = this.camU;
-    const planesU = this.planesU;
-    const hf = this.hf;
-
-    const clearK = Fn(() => {
-      const i = instanceIndex;
-      If(i.greaterThanEqual(GROUPS), () => {
-        Return();
-      });
-      atomicStore(counters.element(i), uint(0));
-    })().compute(GROUPS);
-    clearK.setName('vegClear');
-
-    const inFrustum = (center: NV3, rad: NF): NF => {
-      // product of per-plane step(−r ≤ dist) — 1 inside, 0 outside
-      let inside: NF = float(1);
-      for (let p = 0; p < 6; p++) {
-        const pl = planesU.element(int(p)) as unknown as NV4;
-        const d = pl.xyz.dot(center).add(pl.w);
-        inside = inside.mul(d.greaterThan(rad.negate()).select(float(1), float(0)));
-      }
-      return inside;
-    };
-
-    const planesCsmU = this.planesCsmU;
-    // +30 m slack: the planes are one frame stale (CSM fits its boxes during
-    // the upcoming render) — without it, casters at box edges pop while the
-    // camera moves
-    const inCascade = (c: number, center: NV3, rad: NF): NF => {
-      let inside: NF = float(1);
-      for (let p = 0; p < 6; p++) {
-        const pl = planesCsmU.element(int(c * 6 + p)) as unknown as NV4;
-        const d = pl.xyz.dot(center).add(pl.w);
-        inside = inside.mul(
-          d.greaterThan(rad.add(30).negate()).select(float(1), float(0)),
-        );
-      }
-      return inside;
-    };
-
-    const appendTo = (g: NI | NU, slot: NU): void => {
-      const idx = atomicAdd(counters.element(g), uint(1)) as unknown as NU;
-      If(idx.lessThan(capBuf.element(g) as unknown as NU), () => {
-        compact
-          .element((offBuf.element(g) as unknown as NU).add(idx))
-          .assign(slot);
-      });
-    };
-
-    const makeCull = (
-      layer: ScatterLayer,
-      kind: 'trees' | 'under' | 'extras',
-    ): object => {
-      const N = layer.count;
-      const k = Fn(() => {
-        const i = instanceIndex;
-        If(i.greaterThanEqual(uint(Math.max(N, 1))), () => {
-          Return();
-        });
-        const A = layer.bufA.element(i) as unknown as NV4;
-        const B = layer.bufB.element(i) as unknown as NV4;
-        const idF = B.w;
-        const cls = idF.div(8).floor();
-        const variant = idF.sub(cls.mul(8));
-        const info = clsBuf.element(cls.toInt()) as unknown as NV4;
-        const scl = A.w;
-        const hgt = info.x.mul(scl);
-        const rad = info.y.mul(scl);
-        const center = A.xyz.add(vec3(0, 1, 0).mul(hgt.mul(0.5)));
-        const dist = A.xyz.sub(camU).length();
-
-        if (kind !== 'trees') {
-          // hard reach bound — applies to main view AND casters (beyond it
-          // no ring geometry exists at all)
-          If(dist.greaterThanEqual(info.z), () => {
-            Return();
-          });
-        }
-
-        if (kind === 'under') {
-          // understory never casts — keep the cheap early-out path
-          If(inFrustum(center, rad).lessThan(0.5), () => {
-            Return();
-          });
-          const g = cls.sub(8).mul(4).add(variant).add(54).toInt();
-          appendTo(g as unknown as NI, i as unknown as NU);
-          return;
-        }
-
-        // main-view visibility: frustum + terrain-occlusion march (camera
-        // sight line) — casters intentionally skip BOTH (an off-screen or
-        // ridge-hidden tree still casts into the visible scene)
-        const visMain = inFrustum(center, rad).toVar();
-        If(visMain.greaterThan(0.5).and(dist.greaterThan(140)), () => {
-          const top = vec3(A.x, A.y.add(hgt), A.z);
-          const occ = float(0).toVar();
-          for (let st = 1; st <= 7; st++) {
-            const t = st / 8;
-            const sp = camU.mul(1 - t).add(top.mul(t)) as unknown as NV3;
-            const th = hf.sampleHeightNearest(vec2(sp.x, sp.z));
-            occ.assign(occ.max(th.sub(sp.y)));
-          }
-          If(occ.greaterThan(4), () => {
-            visMain.assign(0);
-          });
-        });
-
-        if (kind === 'trees') {
-          const pool = cls.mul(4).add(variant).toInt();
-          If(visMain.greaterThan(0.5), () => {
-            If(dist.lessThan(R0_FAR + BAND0), () => {
-              appendTo(pool.add(146) as unknown as NI, i as unknown as NU);
-            });
-            If(
-              dist.greaterThanEqual(R0_FAR - BAND0).and(dist.lessThan(R1_FAR + BAND1)),
-              () => {
-                appendTo(pool.mul(2) as unknown as NI, i as unknown as NU);
-              },
-            );
-            If(
-              dist.greaterThanEqual(R1_FAR - BAND1).and(dist.lessThan(R2_FAR + BAND2)),
-              () => {
-                appendTo(pool.mul(2).add(1) as unknown as NI, i as unknown as NU);
-              },
-            );
-            If(dist.greaterThanEqual(R2_FAR - BAND2), () => {
-              appendTo(cls.add(48).toInt() as unknown as NI, i as unknown as NU);
-            });
-          });
-          // casters per cascade — same ring choice as the main view so the
-          // shadow silhouette matches the rendered crown
-          for (let c = 0; c < CASCADES; c++) {
-            const base = MAIN_GROUPS + c * CASC_LOCALS;
-            If(inCascade(c, center, rad).greaterThan(0.5), () => {
-              If(dist.lessThan(R0_FAR + BAND0), () => {
-                appendTo(
-                  pool.add(base + 48) as unknown as NI,
-                  i as unknown as NU,
-                );
-              });
-              If(
-                dist.greaterThanEqual(R0_FAR - BAND0).and(dist.lessThan(R1_FAR + BAND1)),
-                () => {
-                  appendTo(pool.mul(2).add(base) as unknown as NI, i as unknown as NU);
-                },
-              );
-              If(
-                dist.greaterThanEqual(R1_FAR - BAND1).and(dist.lessThan(R2_FAR + BAND2)),
-                () => {
-                  appendTo(
-                    pool.mul(2).add(base + 1) as unknown as NI,
-                    i as unknown as NU,
-                  );
-                },
-              );
-              // impostor band: crown proxies keep casting past R2 so the
-              // shadow field fades out instead of ending in a camera circle
-              If(
-                dist.greaterThanEqual(R2_FAR - BAND2).and(dist.lessThan(IMP_CAST_FAR)),
-                () => {
-                  appendTo(
-                    cls.add(base + 136).toInt() as unknown as NI,
-                    i as unknown as NU,
-                  );
-                },
-              );
-            });
-          }
-        } else {
-          const pe = cls.sub(16).mul(4).add(variant);
-          const hasR2 = info.w.greaterThan(0.5);
-          If(visMain.greaterThan(0.5), () => {
-            If(hasR2, () => {
-              If(dist.lessThan(EX_R1_FAR + EX_BAND), () => {
-                appendTo(pe.mul(2).add(82).toInt() as unknown as NI, i as unknown as NU);
-              });
-              If(dist.greaterThanEqual(EX_R1_FAR - EX_BAND), () => {
-                appendTo(pe.mul(2).add(83).toInt() as unknown as NI, i as unknown as NU);
-              });
-            }).Else(() => {
-              appendTo(pe.mul(2).add(82).toInt() as unknown as NI, i as unknown as NU);
-            });
-          });
-          for (let c = 0; c < CASCADES; c++) {
-            const base = MAIN_GROUPS + c * CASC_LOCALS + 72;
-            If(inCascade(c, center, rad).greaterThan(0.5), () => {
-              If(hasR2, () => {
-                If(dist.lessThan(EX_R1_FAR + EX_BAND), () => {
-                  appendTo(
-                    pe.mul(2).add(base).toInt() as unknown as NI,
-                    i as unknown as NU,
-                  );
-                });
-                If(dist.greaterThanEqual(EX_R1_FAR - EX_BAND), () => {
-                  appendTo(
-                    pe.mul(2).add(base + 1).toInt() as unknown as NI,
-                    i as unknown as NU,
-                  );
-                });
-              }).Else(() => {
-                appendTo(
-                  pe.mul(2).add(base).toInt() as unknown as NI,
-                  i as unknown as NU,
-                );
-              });
-            });
-          }
-        }
-      })().compute(Math.max(N, 1));
-      k.setName(`vegCull_${kind}`);
-      return k;
-    };
-
-    const indirectK = Fn(() => {
-      const i = instanceIndex;
-      If(i.greaterThanEqual(D), () => {
-        Return();
-      });
-      const g = drawGroupBuf.element(i) as unknown as NU;
-      const raw = atomicLoad(counters.element(g)) as unknown as NU;
-      const cap = capBuf.element(g) as unknown as NU;
-      const n = raw.greaterThan(cap).select(cap, raw);
-      indirectStore.element(i.mul(5).add(1)).assign(n);
-    })().compute(D);
-    indirectK.setName('vegIndirect');
-
-    this.kernels = [
-      clearK,
-      makeCull(this.scatter.trees, 'trees'),
-      makeCull(this.scatter.understory, 'under'),
-      makeCull(this.scatter.extras, 'extras'),
-      makeCull(this.scatter.stones, 'extras'),
-      indirectK,
-    ];
+    this.kernels = buildCullKernels({
+      counters: this.counters,
+      compact: this.compact,
+      capBuf,
+      offBuf,
+      clsBuf,
+      drawGroupBuf,
+      indirectStore,
+      drawCount: D,
+      camU: this.camU,
+      planesU: this.planesU,
+      planesCsmU: this.planesCsmU,
+      hf: this.hf,
+      scatter: this.scatter,
+    });
   }
 
   /** wire the CSM rig (cascade cameras feed the caster cull) */
@@ -991,12 +504,12 @@ export class Forests {
         tris += n * (this.groupTris[g] ?? 0);
         if (g >= MAIN_GROUPS) {
           cast += n;
-        } else if (g < 48) {
+        } else if (g < IMPOSTOR_BASE) {
           if (g % 2 === 0) r1 += n;
           else r2 += n;
-        } else if (g < 54) imp += n;
-        else if (g < 82) under += n;
-        else if (g < 146) extras += n;
+        } else if (g < UNDER_BASE) imp += n;
+        else if (g < EXTRAS_BASE) under += n;
+        else if (g < TREE_MAIN_BASE) extras += n;
         else hero += n;
       }
       this.hud = {

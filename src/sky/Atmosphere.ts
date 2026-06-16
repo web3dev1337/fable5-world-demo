@@ -88,6 +88,16 @@ function densities(h: NF): { dr: NF; dm: NF; doz: NF } {
   return { dr, dm, doz };
 }
 
+/** radius at ray distance t from start radius r along cos-zenith mu */
+function rayRadius(t: NF, r: NF, mu: NF): NF {
+  return sqrt(t.mul(t).add(r.mul(r)).add(t.mul(r).mul(mu).mul(2)));
+}
+
+/** total extinction: rayleigh·dr + mie_e·dm + ozone·doz */
+function extinction({ dr, dm, doz }: { dr: NF; dm: NF; doz: NF }): NV3 {
+  return betaR.mul(dr).add(vec3(BETA_M_E).mul(dm)).add(betaO.mul(doz));
+}
+
 /** distance from (r, mu) to the atmosphere top along the ray */
 function distToTop(r: NF, mu: NF): NF {
   const disc = r.mul(r).mul(mu.mul(mu).sub(1)).add(RT * RT);
@@ -164,8 +174,14 @@ export class Atmosphere {
 
   async init(renderer: Renderer): Promise<void> {
     this.renderer = renderer;
+    await this.bakeTransmittance(renderer);
+    await this.bakeMultiScatter(renderer);
+    this.skyCompute = this.buildSkyView();
+    await renderer.computeAsync(this.skyCompute);
+  }
 
-    // --- transmittance bake ----------------------------------------------------
+  /** transmittance LUT (256×64): optical depth to atmosphere top */
+  private async bakeTransmittance(renderer: Renderer): Promise<void> {
     const tK = Fn(() => {
       const i = instanceIndex;
       If(i.greaterThanEqual(T_W * T_H), () => {
@@ -190,19 +206,19 @@ export class Atmosphere {
       const tau = vec3(0).toVar();
       Loop(STEPS, ({ i: si }: { readonly i: NI }) => {
         const t = float(si).add(0.5).mul(dt);
-        const rx = sqrt(t.mul(t).add(r.mul(r)).add(t.mul(r).mul(muC).mul(2)));
+        const rx = rayRadius(t, r, muC);
         const h = rx.sub(RG);
         const { dr, dm, doz } = densities(h);
-        tau.addAssign(
-          betaR.mul(dr).add(vec3(BETA_M_E).mul(dm)).add(betaO.mul(doz)).mul(dt),
-        );
+        tau.addAssign(extinction({ dr, dm, doz }).mul(dt));
       });
       textureStore(this.transmittanceLUT, uvec2(x.toUint(), y.toUint()), vec4(vexp3(tau.negate()), 1)).toWriteOnly();
     })().compute(T_W * T_H);
     tK.setName('atmoTransmittance');
     await renderer.computeAsync(tK);
+  }
 
-    // --- multiple-scattering bake -----------------------------------------------
+  /** multiple-scattering LUT (32×32): isotropic 2nd-order Ψ; needs transmittance */
+  private async bakeMultiScatter(renderer: Renderer): Promise<void> {
     // 64 uniform sphere directions (golden spiral), unrolled as constants
     const dirs: [number, number, number][] = [];
     for (let k = 0; k < 64; k++) {
@@ -235,11 +251,11 @@ export class Atmosphere {
         const T = vec3(1).toVar();
         Loop(STEPS, ({ i: si }: { readonly i: NI }) => {
           const t = float(si).add(0.5).mul(dt);
-          const rx = sqrt(t.mul(t).add(r.mul(r)).add(t.mul(r).mul(mu).mul(2)));
+          const rx = rayRadius(t, r, mu);
           const h = rx.sub(RG).max(0);
           const { dr, dm, doz } = densities(h);
           const sigmaS = betaR.mul(dr).add(vec3(BETA_M_S).mul(dm));
-          const sigmaE = betaR.mul(dr).add(vec3(BETA_M_E).mul(dm)).add(betaO.mul(doz));
+          const sigmaE = extinction({ dr, dm, doz });
           const muSx = rx.mul(muS).add(t.mul(dir.dot(sunD))).div(rx).clamp(-1, 1);
           const tSun = this.sampleTransmittance(rx, muSx);
           const stepT = vexp3(sigmaE.mul(dt).negate());
@@ -263,8 +279,14 @@ export class Atmosphere {
     })().compute(MS_RES * MS_RES);
     msK.setName('atmoMultiScatter');
     await renderer.computeAsync(msK);
+  }
 
-    // --- sky-view kernel (re-run per sun change) ----------------------------------
+  /**
+   * sky-view LUT (192×108): full in-scatter panorama; depends on transmittance
+   * AND multiple-scatter LUTs. Returns the compute node, re-dispatched on every
+   * sun move (see setSun) — the only LUT that re-bakes after init.
+   */
+  private buildSkyView(): ComputeNode {
     const svK = Fn(() => {
       const i = instanceIndex;
       If(i.greaterThanEqual(SV_W * SV_H), () => {
@@ -299,12 +321,12 @@ export class Atmosphere {
       const T = vec3(1).toVar();
       Loop(STEPS, ({ i: si }: { readonly i: NI }) => {
         const t = float(si).add(0.5).mul(dt);
-        const rx = sqrt(t.mul(t).add(r.mul(r)).add(t.mul(r).mul(mu).mul(2)));
+        const rx = rayRadius(t, r, mu);
         const h = rx.sub(RG).max(0);
         const { dr, dm, doz } = densities(h);
         const sigmaSR = betaR.mul(dr);
         const sigmaSM = vec3(BETA_M_S).mul(dm);
-        const sigmaE = betaR.mul(dr).add(vec3(BETA_M_E).mul(dm)).add(betaO.mul(doz)).max(1e-9);
+        const sigmaE = extinction({ dr, dm, doz }).max(1e-9);
         const muSx = rx.mul(sunDirN.y).add(t.mul(nu)).div(rx).clamp(-1, 1);
         const tSun = this.sampleTransmittance(rx, muSx);
         const psi = this.sampleMultiScatter(rx, muSx);
@@ -327,8 +349,7 @@ export class Atmosphere {
       textureStore(this.skyViewLUT, uvec2(x.toUint(), y.toUint()), vec4(L, 1)).toWriteOnly();
     })().compute(SV_W * SV_H);
     svK.setName('atmoSkyView');
-    this.skyCompute = svK;
-    await renderer.computeAsync(svK);
+    return svK;
   }
 
   /** point the sun (unit world dir) and re-bake the sky-view LUT */
