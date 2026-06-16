@@ -138,6 +138,10 @@ export class Forests {
   private lastCamZ = NaN;
   private lastPlanes = new Float32Array(6 * 4);
   private lastCascPlanes = new Float32Array(6 * CASCADES * 4);
+  // motion cadence (see GroundRing): re-cull at most every other frame while
+  // moving — a 1-frame-stale visible set only lags instances at the cull ring
+  // boundary by one frame, imperceptible during motion.
+  private framesSinceCull = 99;
 
   constructor(
     private hf: Heightfield,
@@ -519,10 +523,12 @@ export class Forests {
       this.lastCascPlanes[b + 2] = v.z;
       this.lastCascPlanes[b + 3] = v.w;
     }
-    if (changed) {
+    this.framesSinceCull++;
+    if (changed && this.framesSinceCull >= 2) {
       for (const k of this.kernels) {
         renderer.compute(k as Parameters<Renderer['compute']>[0]);
       }
+      this.framesSinceCull = 0;
     }
     this.frame++;
     if (this.frame % 90 === 0 && !this.reading) {

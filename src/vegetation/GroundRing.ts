@@ -106,6 +106,12 @@ export class GroundRing {
   private lastCamY = NaN;
   private lastCamZ = NaN;
   private lastPlanes = new Float32Array(24);
+  // motion cadence: re-cull at most every other frame while moving. The ring is
+  // a camera-following clipmap; a 1-frame-stale visible set lags only the far
+  // ring edge by one frame (≈6 cm at walk speed) — same imperceptible-latency
+  // principle CsmCached already uses for far shadow cascades. Resumes instantly
+  // from a static hold (framesSinceCull is large by then).
+  private framesSinceCull = 99;
 
   constructor(
     private hf: Heightfield,
@@ -324,10 +330,12 @@ export class GroundRing {
     this.lastCamX = camera.position.x;
     this.lastCamY = camera.position.y;
     this.lastCamZ = camera.position.z;
-    if (changed) {
+    this.framesSinceCull++;
+    if (changed && this.framesSinceCull >= 2) {
       for (const k of this.kernels) {
         renderer.compute(k as Parameters<Renderer['compute']>[0]);
       }
+      this.framesSinceCull = 0;
     }
     this.frame++;
     if (this.frame % 90 === 30 && !this.reading) {
