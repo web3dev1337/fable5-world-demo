@@ -40,6 +40,17 @@ import type { Object3D } from 'three';
 const tagged = new WeakSet<object>();
 let frameNo = 0;
 
+/** per-frame tally of how many tagged veg/grass draws refreshed vs skipped
+ *  (sentinels = first draw per shared buffer; skipped = read the flushed buffer).
+ *  Published each tick for the HUD; cheap two-counter accounting. */
+const live = { refresh: 0, skip: 0 };
+let published = { refresh: 0, skip: 0 };
+
+/** last completed frame's veg refresh/skip counts (HUD readout) */
+export function vegRefreshStats(): { refresh: number; skip: number } {
+  return published;
+}
+
 /** mark a draw object as refresh-managed (uniforms are all shared/static) */
 export function markVegRefresh(obj: Object3D): void {
   tagged.add(obj);
@@ -48,6 +59,9 @@ export function markVegRefresh(obj: Object3D): void {
 /** advance the per-frame flush clock (call once per rendered frame, pre-render) */
 export function tickVegRefresh(): void {
   frameNo++;
+  published = { refresh: live.refresh, skip: live.skip };
+  live.refresh = 0;
+  live.skip = 0;
 }
 
 interface BindingShape {
@@ -120,10 +134,12 @@ export function installVegRefreshControl(renderer: WebGPURenderer): void {
           // bindings), and learn this draw's shared bind groups afterwards.
           if (!built.has(obj)) {
             built.add(obj);
+            live.refresh++;
             return orig.call(this, robj, nf);
           }
           const shared = sharedGroups(r);
           if (shared === null || shared.length === 0) {
+            live.refresh++;
             return orig.call(this, robj, nf); // unknown sharing → stay correct
           }
           // refresh iff this draw is the first in render order this frame to
@@ -136,7 +152,12 @@ export function installVegRefreshControl(renderer: WebGPURenderer): void {
               sentinel = true;
             }
           }
-          return sentinel ? orig.call(this, robj, nf) : false;
+          if (sentinel) {
+            live.refresh++;
+            return orig.call(this, robj, nf);
+          }
+          live.skip++;
+          return false;
         };
       } catch {
         /* monitor not ready on this RO; retry next createRenderObject */
