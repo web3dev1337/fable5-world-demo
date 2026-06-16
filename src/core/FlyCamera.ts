@@ -13,14 +13,11 @@
 
 import type { PerspectiveCamera } from 'three';
 import { Vector3 } from 'three';
-import type { CamPose } from './Hooks';
+import type { CamPose, GroundProbe } from './Hooks';
 
 const FORWARD = new Vector3();
 const RIGHT = new Vector3();
 const MOVE = new Vector3();
-
-/** terrain/water heights at (x, z) — installed by the world scene */
-export type GroundProbe = (x: number, z: number) => { ground: number; water: number };
 
 export type CamMode = 'walk' | 'fly';
 

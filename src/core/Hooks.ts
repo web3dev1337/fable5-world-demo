@@ -13,6 +13,9 @@ export interface CamPose {
   fov?: number;
 }
 
+/** terrain/water heights at (x, z) — walk mode + fly soft collision */
+export type GroundProbe = (x: number, z: number) => { ground: number; water: number };
+
 export interface EngineStats {
   fps: number;
   frameMs: number;
@@ -57,7 +60,7 @@ export interface LaasHooks {
    *  params) — every explicit/programmatic pose keeps fly semantics */
   initialPoseMode: 'walk' | 'fly' | null;
   /** terrain/water heights at (x, z) — walk mode + fly soft collision */
-  groundProbe: ((x: number, z: number) => { ground: number; water: number }) | null;
+  groundProbe: GroundProbe | null;
   setTimeOfDay: ((t: number) => void) | null;
   /** settle frames (TAA/temporal effects) then resolve — call before screenshots */
   settle: ((frames?: number) => Promise<void>) | null;
