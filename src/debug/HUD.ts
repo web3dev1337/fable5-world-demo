@@ -67,6 +67,9 @@ export class Hud {
   private applyVisibility(): void {
     this.el.style.display = this.visible ? 'block' : 'none';
     this.fpsEl.style.display = this.visible ? 'none' : 'block';
+    // per-pass GPU timing only matters while the full panel is up — keep the
+    // timestamp-readback stall off whenever the HUD is closed
+    this.engine.setProfiling(this.visible);
   }
 
   addProvider(p: HudProvider): void {

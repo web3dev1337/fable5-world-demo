@@ -42,6 +42,11 @@ export class Engine {
   private timestampsSupported = false;
   private timestampPending = false;
   private profiler: GpuProfiler | null = null;
+  // per-pass GPU timing requires an async timestamp readback every frame; on a
+  // fast GPU that readback still forces a pipeline stall (~halves fps in a
+  // bimodal pattern). It only feeds the F3 HUD, so resolve only while the HUD
+  // is open. Pixel-free toggle ⇒ no visual change, just dropped profiler stall.
+  private profilingEnabled = false;
 
   private constructor(renderer: WebGPURenderer, params: LaasParams, hooks: LaasHooks) {
     this.renderer = renderer;
@@ -101,6 +106,9 @@ export class Engine {
     const engine = new Engine(renderer, params, hooks);
     engine.timestampsSupported = (hooks.diag?.features ?? []).includes('timestamp-query');
     if (engine.timestampsSupported) engine.profiler = new GpuProfiler(renderer);
+    // only profile when the HUD is up at boot (?hud=1); the HUD toggle (F3)
+    // flips it at runtime via setProfiling — players never pay the readback
+    engine.profilingEnabled = params.hud;
     // depth-prepass correctness (see VegPrepass): position math must land
     // on identical depths across the depth-only and shaded pipelines
     installPositionInvariance(renderer);
@@ -118,6 +126,12 @@ export class Engine {
 
   onUpdate(fn: UpdateFn): void {
     this.updateFns.push(fn);
+  }
+
+  /** enable per-pass GPU timing (the F3 HUD turns this on; off by default so
+   *  players don't pay the per-frame timestamp readback stall) */
+  setProfiling(on: boolean): void {
+    this.profilingEnabled = on;
   }
 
   /** resolves after `frames` additional frames have been rendered */
@@ -185,7 +199,7 @@ export class Engine {
     // resolve EVERY frame: the 2048-query pool only resets its write index
     // on resolve — the old every-10-frames cadence overflowed it (≈100
     // timed contexts/frame), killing per-pass attribution and warning once
-    if (this.timestampsSupported && !this.timestampPending) {
+    if (this.timestampsSupported && this.profilingEnabled && !this.timestampPending) {
       this.timestampPending = true;
       Promise.all([
         this.renderer.resolveTimestampsAsync(TimestampQuery.RENDER),
