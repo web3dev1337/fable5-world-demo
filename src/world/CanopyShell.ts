@@ -11,7 +11,7 @@
  * with sparse impostors (which continue to give individual-tree silhouettes).
  */
 
-import { BufferAttribute, BufferGeometry, Mesh } from 'three';
+import { Mesh } from 'three';
 import { MeshPhysicalNodeMaterial, type StorageTexture } from 'three/webgpu';
 import {
   Discard,
@@ -34,6 +34,7 @@ import { fbm3 } from '../gpu/noise/NoiseTSL';
 import { grassTranslucency } from '../render/VegMaterials';
 import type { NF, NV2, NV3 } from '../gpu/TSLTypes';
 import type { Heightfield } from './Heightfield';
+import { worldGridGeometry } from './GridMesh';
 import { WORLD_SIZE } from './WorldConst';
 
 const GRID = 512;
@@ -44,32 +45,7 @@ export function buildCanopyShell(
   hf: Heightfield,
   canopyTex: StorageTexture,
 ): Mesh {
-  const n = GRID + 1;
-  const pos = new Float32Array(n * n * 3);
-  for (let z = 0; z < n; z++) {
-    for (let x = 0; x < n; x++) {
-      const i = (z * n + x) * 3;
-      pos[i] = (x / GRID - 0.5) * WORLD_SIZE;
-      pos[i + 1] = 0;
-      pos[i + 2] = (z / GRID - 0.5) * WORLD_SIZE;
-    }
-  }
-  const idx = new Uint32Array(GRID * GRID * 6);
-  let w = 0;
-  for (let z = 0; z < GRID; z++) {
-    for (let x = 0; x < GRID; x++) {
-      const a = z * n + x;
-      idx[w++] = a;
-      idx[w++] = a + n;
-      idx[w++] = a + 1;
-      idx[w++] = a + 1;
-      idx[w++] = a + n;
-      idx[w++] = a + n + 1;
-    }
-  }
-  const geo = new BufferGeometry();
-  geo.setAttribute('position', new BufferAttribute(pos, 3));
-  geo.setIndex(new BufferAttribute(idx, 1));
+  const geo = worldGridGeometry(GRID);
 
   // physical for specularIntensity — the far-forest aggregate silvered at
   // glancing sun exactly like the cards (user feedback batch 2 item 11)
