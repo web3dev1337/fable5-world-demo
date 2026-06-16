@@ -55,6 +55,11 @@ import { runiform } from '../gpu/RenderUniform';
 import { gtaoLayer } from './Gtao';
 import { HalfResMrtNode, type HalfResEntry } from './HalfResMrt';
 
+/** far-plane sky test — tolerates either depth convention (0 or 1 at far) */
+function isSkyDepth(d: NF) {
+  return d.lessThanEqual(1e-7).or(d.greaterThanEqual(0.9999999));
+}
+
 export class PostStack {
   readonly post: RenderPipeline;
   private grade = new GradeUniforms();
@@ -156,7 +161,7 @@ export class PostStack {
         const viewDirV = getViewPosition(screenUV, float(0.5), uProjInv).normalize();
         const dirW = uCamWorld.mul(vec4(viewDirV, 0)).xyz.normalize().toVar();
         const dist = getViewPosition(screenUV, d, uProjInv).length();
-        const isSky = d.lessThanEqual(1e-7).or(d.greaterThanEqual(0.9999999));
+        const isSky = isSkyDepth(d);
         const maxD = isSky.select(float(1e9), dist);
         const jitter = hash12(
           screenUV.mul(vec2(911.3, 423.7)).add(float(frameU).mul(0.61803)),
@@ -190,7 +195,7 @@ export class PostStack {
       const bounceLayer = Fn((): NV4 => {
         const res = vec4(0).toVar();
         const d = depthTex.x;
-        const isSky = d.lessThanEqual(1e-7).or(d.greaterThanEqual(0.9999999));
+        const isSky = isSkyDepth(d);
         If(isSky.not(), () => {
           const viewPos = getViewPosition(screenUV, d, uProjInv);
           const dist = viewPos.length();
@@ -249,7 +254,7 @@ export class PostStack {
       const distKm = dist.div(1000);
       const camAltKm = camPosW.y.div(1000).max(0.005);
       // sky = cleared depth; tolerate either depth convention (0 or 1 at far)
-      const isSky = d.lessThanEqual(1e-7).or(d.greaterThanEqual(0.9999999));
+      const isSky = isSkyDepth(d);
       // froxel volumetrics first (local shafts/valley fog ≤ ~480 m), the
       // km-scale Hillaire haze integrates on top of the fogged radiance
       if (froxels) {
@@ -395,7 +400,7 @@ export class PostStack {
     const contactNode = Fn((): NF => {
       const result = float(1).toVar();
       const d = depthTex.x;
-      const isSky = d.lessThanEqual(1e-7).or(d.greaterThanEqual(0.9999999));
+      const isSky = isSkyDepth(d);
       const viewPos = getViewPosition(screenUV, d, uProjInv);
       const dist = viewPos.length();
       If(isSky.not().and(dist.lessThan(240)), () => {
@@ -604,7 +609,7 @@ export class PostStack {
             const texel = screenUV.mul(screenSize);
             const raw = (velocityTex.load(texel as unknown as Parameters<typeof velocityTex.load>[0]) as unknown as NV4).xy;
             const d = (depthTex.load(texel as unknown as Parameters<typeof depthTex.load>[0]) as unknown as NV4).x;
-            const isSky = d.lessThanEqual(1e-7).or(d.greaterThanEqual(0.9999999));
+            const isSky = isSkyDepth(d);
             const dist = getViewPosition(screenUV, d, uProjInv).length();
             const farGeo = isSky.not().and(dist.greaterThan(1500));
             const ana = velReproject(texel);
