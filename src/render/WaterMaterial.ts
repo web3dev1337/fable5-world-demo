@@ -130,16 +130,15 @@ export function waterMaterial(
   const fdir = flowV.div(spd.max(1e-4));
 
   // ---- ripple normal: two-phase flowmap over fbm gradients ---------------------
-  const CYC = 0.45; // flowmap cycles/s
-  const ph1 = fract(time.mul(CYC));
-  const ph2 = fract(time.mul(CYC).add(0.5));
+  const ph1 = fract(time.mul(FLOW_CYC));
+  const ph2 = fract(time.mul(FLOW_CYC).add(0.5));
   const w2 = abs(ph1.sub(0.5)).mul(2);
   // advection velocity (m/s): rivers stream, lakes get a faint breeze drift
   const vel = fdir.mul(spd.mul(1.9)).add(vec2(0.045, 0.03));
   const gradAt = (s: number, off: NV2): NV2 =>
     (texture(noiseA, positionWorld.xz.sub(off).div(s * PERIOD_FBM)) as unknown as NV4).zw.div(s);
-  const offA = vel.mul(ph1.div(CYC));
-  const offB = vel.mul(ph2.div(CYC)).add(vec2(3.71, 1.13));
+  const offA = vel.mul(ph1.div(FLOW_CYC));
+  const offB = vel.mul(ph2.div(FLOW_CYC)).add(vec2(3.71, 1.13));
   const layer = (off: NV2): NV2 => gradAt(0.9, off).add(gradAt(3.4, off.mul(0.62)).mul(0.5));
   const grad = mix(layer(offA), layer(offB), w2);
   // baked fbm gradients are ±(3..10)/m at these scales — the old amp
