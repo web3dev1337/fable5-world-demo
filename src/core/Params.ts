@@ -1,5 +1,7 @@
 /** URL parameter parsing — every run is fully described by its URL. */
 
+import type { CamPose } from './Hooks';
+
 export type QualityPreset = 'low' | 'high' | 'ultra';
 
 export interface LaasParams {
@@ -50,9 +52,7 @@ export function parseParams(search: string = window.location.search): LaasParams
 }
 
 /** Parse a `cam` string into pose components; returns null when malformed. */
-export function parseCamString(
-  cam: string,
-): { p: [number, number, number]; yaw: number; pitch: number; fov?: number } | null {
+export function parseCamString(cam: string): CamPose | null {
   const parts = cam.split(',').map(Number);
   if (parts.length < 5 || parts.some((v) => !Number.isFinite(v))) return null;
   const [px, py, pz, yaw, pitch, fov] = parts as [number, number, number, number, number, number?];

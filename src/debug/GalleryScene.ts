@@ -598,7 +598,7 @@ export async function buildGalleryScene(ctx: WorldContext): Promise<void> {
   }
 
   // ---- post stack (no clouds in the gallery) ----------------------------------
-  ctx.progress(0.95, 'gallery: post pipeline');
+  ctx.progress(0.98, 'gallery: post pipeline');
   const post = new PostStack(engine, sunSky.atmosphere, params.timeOfDay, null);
   engine.post = post;
 

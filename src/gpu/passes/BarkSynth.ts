@@ -7,7 +7,7 @@
  * paper+lenticels, karst gnarl ridges, snag weathered cracks.
  */
 
-import { FloatType, LinearMipmapLinearFilter, RepeatWrapping, Vector2 } from 'three';
+import { LinearMipmapLinearFilter, RepeatWrapping, Vector2 } from 'three';
 import { StorageTexture, type Renderer } from 'three/webgpu';
 import {
   Fn,
@@ -203,7 +203,6 @@ export async function bakeBarkTextures(
   };
   const texA = mk();
   const texB = mk();
-  void FloatType;
 
   const kernel = Fn(() => {
     const id = instanceIndex;

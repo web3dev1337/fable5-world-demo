@@ -169,13 +169,10 @@ export async function runBiomeSnow(
       .mul(smoothstep(1.9, 1.1, slope));
     const dens = clamp(densBase.sub(snow.mul(0.7)), 0, 1);
 
-    const DIAG_COMPONENTS = false; // temp bisect: write snow components
     textureStore(
       out,
       uvec2(x.toUint(), y.toUint()),
-      DIAG_COMPONENTS
-        ? vec4(snowTemp, slopeHold, ledge, temp.div(20).add(0.5))
-        : vec4(biome.div(8), snow, dens, rockExposure),
+      vec4(biome.div(8), snow, dens, rockExposure),
     ).toWriteOnly();
   })().compute(res * res);
   kernel.setName('biomeSnowClassify');

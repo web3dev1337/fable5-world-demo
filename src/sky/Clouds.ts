@@ -295,6 +295,10 @@ export class Clouds {
 
     const STEPS = 32;
     const seg = tExit.sub(tEnter).div(STEPS);
+    // coarse steps (grazing / inside-slab rays near peaks) make a full-seg
+    // jitter swing between frames → flicker TRAA can't resolve; fade jitter as
+    // the step grows so coarse marches stay temporally stable
+    const jit = jitter.mul(clamp(float(70).div(seg), 0, 1));
     const trans = float(1).toVar();
     const light = vec3(0).toVar();
     const ambient = this.atmosphere
@@ -317,7 +321,7 @@ export class Clouds {
 
     If(valid, () => {
       Loop(STEPS, ({ i: si }: { readonly i: NI }) => {
-        const t = tEnter.add(float(si).add(jitter).mul(seg));
+        const t = tEnter.add(float(si).add(jit).mul(seg));
         const sp = camPos.add(dir.mul(t));
         const dens = this.sampleDensity(sp, true);
         If(dens.greaterThan(0.002), () => {

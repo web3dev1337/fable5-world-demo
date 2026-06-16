@@ -11,41 +11,16 @@
  * shadows. The real terrain keeps castShadow = false.
  */
 
-import { BufferAttribute, BufferGeometry, Mesh } from 'three';
+import { Mesh } from 'three';
 import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { positionLocal, vec2, vec3 } from 'three/tsl';
 import type { Heightfield } from './Heightfield';
-import { WORLD_SIZE } from './WorldConst';
+import { worldGridGeometry } from './GridMesh';
 
 const GRID = 512;
 
 export function buildTerrainShadowProxy(hf: Heightfield): Mesh {
-  const n = GRID + 1;
-  const pos = new Float32Array(n * n * 3);
-  for (let z = 0; z < n; z++) {
-    for (let x = 0; x < n; x++) {
-      const i = (z * n + x) * 3;
-      pos[i] = (x / GRID - 0.5) * WORLD_SIZE;
-      pos[i + 1] = 0;
-      pos[i + 2] = (z / GRID - 0.5) * WORLD_SIZE;
-    }
-  }
-  const idx = new Uint32Array(GRID * GRID * 6);
-  let w = 0;
-  for (let z = 0; z < GRID; z++) {
-    for (let x = 0; x < GRID; x++) {
-      const a = z * n + x;
-      idx[w++] = a;
-      idx[w++] = a + n;
-      idx[w++] = a + 1;
-      idx[w++] = a + 1;
-      idx[w++] = a + n;
-      idx[w++] = a + n + 1;
-    }
-  }
-  const geo = new BufferGeometry();
-  geo.setAttribute('position', new BufferAttribute(pos, 3));
-  geo.setIndex(new BufferAttribute(idx, 1));
+  const geo = worldGridGeometry(GRID);
 
   const mat = new MeshStandardNodeMaterial();
   const lifted = vec3(

@@ -28,8 +28,10 @@ import {
   positionLocal,
   screenCoordinate,
   smoothstep,
+  time,
   uint,
   varying,
+  vec2,
   vec3,
   vec4,
 } from 'three/tsl';
@@ -129,7 +131,11 @@ export function applyDitherFade(
   dist: NF,
   fade: RingFade,
 ): void {
-  const ign = interleavedGradientNoise(screenCoordinate.xy);
+  // animate the dither each frame so TRAA dissolves the LOD-crossfade stipple
+  // into smooth alpha — a screen-static IGN leaves fixed screen-door dots
+  const ign = interleavedGradientNoise(
+    screenCoordinate.xy.add(vec2(time.mul(53).mod(128), time.mul(97).mod(128))),
+  );
   let draw: NB | null = null;
   if (fade.fadeInAt !== undefined) {
     const b = fade.inBand ?? fade.band;

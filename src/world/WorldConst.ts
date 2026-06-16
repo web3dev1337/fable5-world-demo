@@ -15,11 +15,8 @@ export const SIM_RES = 2048;
 
 /** vertical range: heights are meters above sea/datum 0 */
 export const LAKE_LEVEL = 142;
-export const VALLEY_FLOOR = 165;
 export const KARST_PLATEAU = 380;
 export const TREELINE = 950;
-export const SNOWLINE_BASE = 1050;
-export const SUMMIT_MAX = 1620;
 
 /** far-shell vista ring: analytic terrain from WORLD_HALF out to FAR_RADIUS */
 export const FAR_RADIUS = 14000;
