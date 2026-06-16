@@ -176,7 +176,11 @@ function bandFade(
   // the EXACT same draw condition — a depth-vs-color discard mismatch
   // punches holes at the fade bands. Main pass only (carpets cast no
   // shadows, so maskShadowNode never consults this).
-  const ign = interleavedGradientNoise(screenCoordinate.xy);
+  // animate the dither each frame so TRAA dissolves the LOD-crossfade stipple
+  // into smooth alpha — a screen-static IGN leaves fixed screen-door dots
+  const ign = interleavedGradientNoise(
+    screenCoordinate.xy.add(vec2(time.mul(53).mod(128), time.mul(97).mod(128))),
+  );
   let cond: NB | null = null;
   if (inV) cond = ign.greaterThanEqual(float(1).sub(inV)) as unknown as NB;
   if (outV) {
