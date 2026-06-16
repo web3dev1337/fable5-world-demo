@@ -179,6 +179,11 @@ export async function buildVegLibrary(
     return parts;
   };
 
+  // retain each species' variant-0 LOD1 tree so the impostor capture below
+  // reuses it instead of rebuilding byte-identical geometry (same named seed
+  // stream + inst) — saves one full skeleton-grow + tube-mesh per species
+  const v0Trees: ReturnType<typeof buildTree>[] = [];
+
   for (let ci = 0; ci < TREE_SPECIES.length; ci++) {
     const sp = TREE_SPECIES[ci] as SpeciesParams;
     for (let v = 0; v < TREE_VARIANTS; v++) {
@@ -194,6 +199,7 @@ export async function buildVegLibrary(
         hero: HERO_DIETS[sp.id] ?? { cardTarget: 1500, meshAnchorTarget: 1200 },
       });
       const t1 = buildTree(sp, seed.rng(label), { lod: 1, inst });
+      if (v === 0) v0Trees[ci] = t1;
       const t2 = buildTree(sp, seed.rng(label), { lod: 2, inst });
       const r0 = treeParts(sp, t0);
       if (t0.foliageMesh) {
@@ -231,10 +237,7 @@ export async function buildVegLibrary(
   const impostors = new Map<number, ImpostorAtlas>();
   for (let ci = 0; ci < TREE_SPECIES.length; ci++) {
     const sp = TREE_SPECIES[ci] as SpeciesParams;
-    const t = buildTree(sp, seed.rng(`veg/${sp.id}/0`), {
-      lod: 1,
-      inst: variantInstance(seed, sp.id, 0),
-    });
+    const t = v0Trees[ci] as ReturnType<typeof buildTree>;
     const parts: ImpostorPart[] = [
       { geometry: t.bark, kind: 'bark', barkTex: barkOf(sp.barkLayer) },
     ];
