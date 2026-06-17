@@ -8,6 +8,7 @@
 
 import type { Engine } from '../core/Engine';
 import type { LaasParams } from '../core/Params';
+import { vegRefreshStats } from '../render/StaticRefresh';
 
 export type HudProvider = () => string[];
 
@@ -59,7 +60,7 @@ export class Hud {
       if (this.acc >= 0.25) {
         this.acc = 0;
         if (this.visible) this.render();
-        else this.fpsEl.textContent = `${this.engine.stats.fps.toFixed(0)} fps`;
+        else this.fpsEl.textContent = this.miniLine();
       }
     });
   }
@@ -76,15 +77,41 @@ export class Hud {
     this.providers.push(p);
   }
 
+  /** tris as a compact 13.6M / 980k string */
+  private static tris(n: number): string {
+    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+    if (n >= 1e3) return `${Math.round(n / 1e3)}k`;
+    return String(n);
+  }
+
+  /** always-on one-liner (F3 panel closed): the at-a-glance perf numbers */
+  private miniLine(): string {
+    const s = this.engine.stats;
+    const sub = (s.counters['cpu.submitMs100'] ?? 0) / 100;
+    return (
+      `${s.fps.toFixed(0)} fps · ${s.frameMs.toFixed(1)}ms · ` +
+      `${s.drawCalls.toLocaleString('en-US')} draws · ${Hud.tris(s.triangles)} tris` +
+      (sub > 0 ? ` · enc ${sub.toFixed(1)}ms` : '')
+    );
+  }
+
   private render(): void {
     const s = this.engine.stats;
     const c = this.engine.camera.position;
     const fmt = (n: number): string => n.toLocaleString('en-US');
+    const sub = (s.counters['cpu.submitMs100'] ?? 0) / 100;
+    const upd = (s.counters['cpu.updateMs100'] ?? 0) / 100;
+    const veg = vegRefreshStats();
+    const vegTot = veg.refresh + veg.skip;
     const lines: string[] = [
       `LAAS  seed=${this.params.seed} scene=${this.params.scene} T=${this.params.timeOfDay}`,
       `${s.fps.toFixed(0)} fps  ${s.frameMs.toFixed(2)} ms (p95 ${s.frameMsP95.toFixed(2)})`,
       `draws ${fmt(s.drawCalls)}  tris ${fmt(s.triangles)}`,
+      `cpu encode ${sub.toFixed(2)} ms  update ${upd.toFixed(2)} ms`,
       `gpu render ${s.gpuPasses['render']?.toFixed(2) ?? '–'} ms  compute ${s.gpuPasses['compute']?.toFixed(2) ?? '–'} ms`,
+      vegTot > 0
+        ? `veg refresh ${fmt(veg.refresh)} / skip ${fmt(veg.skip)} (${Math.round((100 * veg.skip) / vegTot)}% skipped)`
+        : `veg refresh-skip off`,
       `cam ${c.x.toFixed(1)}, ${c.y.toFixed(1)}, ${c.z.toFixed(1)}`,
     ];
     // per-pass GPU attribution (spec §6 HUD requirement; Phase 7 perf)
@@ -96,7 +123,8 @@ export class Hud {
       lines.push('—');
       for (const [k, v] of passes) lines.push(`${v.toFixed(2).padStart(6)} ${k}`);
     }
-    const counterKeys = Object.keys(s.counters);
+    // cpu.* are surfaced in the dedicated encode line above
+    const counterKeys = Object.keys(s.counters).filter((k) => !k.startsWith('cpu.'));
     if (counterKeys.length > 0) {
       lines.push('—');
       for (const k of counterKeys.sort()) lines.push(`${k}: ${fmt(s.counters[k] ?? 0)}`);

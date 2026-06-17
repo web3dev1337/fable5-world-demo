@@ -17,6 +17,7 @@ import { MeshStandardNodeMaterial } from 'three/webgpu';
 import { float, positionLocal, positionWorld, smoothstep, vec3 } from 'three/tsl';
 import { hash12 } from '../../gpu/noise/NoiseTSL';
 import { instanceVeg, type RingFade } from '../../render/VegInstance';
+import { markVegRefresh } from '../../render/StaticRefresh';
 import { depthPrepassTwin } from '../../render/VegPrepass';
 import type { NF } from '../../gpu/TSLTypes';
 import type { CrownDims } from './crownProxy';
@@ -133,6 +134,7 @@ export function makeAddDraw(
     ctx.draws.push({ group: g, indexCount });
     const mesh = new Mesh(geo, mat);
     mesh.frustumCulled = false;
+    markVegRefresh(mesh);
     if (shadowLayer === null) {
       // visible draw — casting is owned by the per-cascade sibling meshes
       ctx.groupTris[g] += tris;
@@ -151,16 +153,16 @@ export function makeAddDraw(
           maskNode: unknown;
           opacityNode: unknown;
         };
-        ctx.prepassGroup.add(
-          depthPrepassTwin(mesh, {
-            positionNode: matS.positionNode,
-            maskNode: matS.maskNode ?? undefined,
-            ...(mat.alphaTest > 0
-              ? { opacityNode: matS.opacityNode, alphaTest: mat.alphaTest }
-              : {}),
-            side: mat.side,
-          }),
-        );
+        const twin = depthPrepassTwin(mesh, {
+          positionNode: matS.positionNode,
+          maskNode: matS.maskNode ?? undefined,
+          ...(mat.alphaTest > 0
+            ? { opacityNode: matS.opacityNode, alphaTest: mat.alphaTest }
+            : {}),
+          side: mat.side,
+        });
+        markVegRefresh(twin);
+        ctx.prepassGroup.add(twin);
       }
     } else {
       // shadow-only caster: lives on the cascade's layer, so ONLY that

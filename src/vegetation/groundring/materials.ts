@@ -25,6 +25,7 @@ import {
   time,
   transformNormalToView,
   uint,
+  uniform,
   uv,
   varying,
   vec2,
@@ -34,7 +35,6 @@ import { canopyAt, cellHash2 } from '../../gpu/passes/Scatter';
 import { grassTranslucency } from '../../render/VegMaterials';
 import { gustAt, windContext, windExposure, windU } from '../../render/Wind';
 import { WORLD_SIZE } from '../../world/WorldConst';
-import { runiform } from '../../gpu/RenderUniform';
 import { CELL_BIAS, DEB_R, G_BAND, grassThin } from './constants';
 import type { NB, NF, NU, NV2, NV3, NV4 } from '../../gpu/TSLTypes';
 import type { Heightfield } from '../../world/Heightfield';
@@ -49,7 +49,9 @@ export interface RingBind {
 
 /** vertex-stage fetch: packed world cell + ground height for this instance */
 function fetchRing(bind: RingBind): { wc: NV2; y: NF; wpos: NV2 } {
-  const at = instanceIndex.add(runiform(uint(bind.base)) as unknown as NU);
+  // object-group (NOT renderGroup): per-draw constant base offset kept local so
+  // grass draws share one renderGroup buffer (see VegInstance.fetchInstance)
+  const at = instanceIndex.add(uniform(uint(bind.base)) as unknown as NU);
   const packed = bind.cells.element(at) as unknown as NU;
   const wc = vec2(
     float(packed.shiftRight(uint(16))).sub(CELL_BIAS),
