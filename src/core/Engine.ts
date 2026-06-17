@@ -48,6 +48,7 @@ export class Engine {
   // bimodal pattern). It only feeds the F3 HUD, so resolve only while the HUD
   // is open. Pixel-free toggle ⇒ no visual change, just dropped profiler stall.
   private profilingEnabled = false;
+  diagnosticsVisible = false;
 
   private constructor(renderer: WebGPURenderer, params: LaasParams, hooks: LaasHooks) {
     this.renderer = renderer;
@@ -110,6 +111,7 @@ export class Engine {
     // only profile when the HUD is up at boot (?hud=1); the HUD toggle (F3)
     // flips it at runtime via setProfiling — players never pay the readback
     engine.profilingEnabled = params.hud;
+    engine.diagnosticsVisible = params.hud;
     // depth-prepass correctness (see VegPrepass): position math must land
     // on identical depths across the depth-only and shaded pipelines
     installPositionInvariance(renderer);
@@ -134,6 +136,7 @@ export class Engine {
    *  players don't pay the per-frame timestamp readback stall) */
   setProfiling(on: boolean): void {
     this.profilingEnabled = on;
+    this.diagnosticsVisible = on;
   }
 
   /** resolves after `frames` additional frames have been rendered */

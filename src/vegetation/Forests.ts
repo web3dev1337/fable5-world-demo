@@ -438,7 +438,7 @@ export class Forests {
   }
 
   /** per-frame: update frustum/camera uniforms, run cull+indirect computes */
-  update(renderer: Renderer, camera: PerspectiveCamera): void {
+  update(renderer: Renderer, camera: PerspectiveCamera, diagnosticsVisible = false): void {
     this.camU.value.copy(camera.position);
     updateVegViewPos(camera);
     this.projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -531,7 +531,7 @@ export class Forests {
       this.framesSinceCull = 0;
     }
     this.frame++;
-    if (this.frame % 90 === 0 && !this.reading) {
+    if (diagnosticsVisible && this.frame % 90 === 0 && !this.reading) {
       this.reading = true;
       void this.readStats(renderer);
     }
