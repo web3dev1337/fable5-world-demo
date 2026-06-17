@@ -2,7 +2,7 @@
 
 Fully procedural 4×4 km open world in the browser on WebGPU. three.js `WebGPURenderer` + TSL node materials + raw WGSL compute. TypeScript strict, **zero `any`**, no WebGL fallback. Everything (mesh, texture, light) is generated at boot; the repo ships no image/model/audio assets. Reproducible from `?seed=N`.
 
-~19,180 LOC across 74 `src/` files + a 19-file `tools/` verification harness.
+~19,200 LOC across 75 `src/` files + a 19-file `tools/` verification harness.
 
 ## Quick Navigation
 
@@ -42,6 +42,7 @@ Everything tool-facing is mirrored to `window.__laas` (Hooks.ts): `ready`/`error
 - **Hooks.ts** (93) — the `window.__laas` contract types + `initHooks`.
 - **BootUI.ts** (35) — boot overlay progress bar/message.
 - **BrowserGate.ts** (102) — pre-boot environment gate. ⚠ `navigator.gpu` only exists in a secure context (`https://` or `http://localhost`) — the gate fires on plain-HTTP LAN IPs even in a capable Chrome.
+- **CameraSignature.ts** (25) — allocation-free camera matrix signature for skipping frustum/cull setup when projection and view matrices are unchanged.
 
 ### GPU helpers — `src/gpu/`
 - **TSLTypes.ts** (30) — node-type aliases (`NF/NV2/NV3/NV4/NB/NI`) + the single sanctioned vector-transcendental cast (`vexp3`). The intended containment point for `as unknown as` TSL-typing-gap casts.

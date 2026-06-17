@@ -169,8 +169,10 @@ export async function buildTerrainScene(ctx: WorldContext): Promise<void> {
     engine.scene.add(forests.group);
     updateSunUniforms(sunSky.sun);
     engine.onUpdate(() => {
-      forests.update(engine.renderer, engine.camera);
-      Object.assign(engine.stats.counters, forests.counterSnapshot());
+      forests.update(engine.renderer, engine.camera, engine.diagnosticsVisible);
+      if (engine.diagnosticsVisible) {
+        Object.assign(engine.stats.counters, forests.counterSnapshot());
+      }
     });
 
     // near-field carpets: 800k-blade grass ring + 80k debris ring
@@ -179,8 +181,10 @@ export async function buildTerrainScene(ctx: WorldContext): Promise<void> {
       ring.init(lib.atlases.get('beech') ?? null);
       engine.scene.add(ring.group);
       engine.onUpdate(() => {
-        ring.update(engine.renderer, engine.camera);
-        Object.assign(engine.stats.counters, ring.counterSnapshot());
+        ring.update(engine.renderer, engine.camera, engine.diagnosticsVisible);
+        if (engine.diagnosticsVisible) {
+          Object.assign(engine.stats.counters, ring.counterSnapshot());
+        }
       });
     }
 

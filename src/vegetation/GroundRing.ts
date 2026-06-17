@@ -57,6 +57,7 @@ import {
   vec3,
 } from 'three/tsl';
 import { canopyAt } from '../gpu/passes/Scatter';
+import { cameraSignatureChanged, createCameraSignature } from '../core/CameraSignature';
 import { rockMaterial } from '../render/VegMaterials';
 import { markVegRefresh } from '../render/StaticRefresh';
 import { depthPrepassTwin } from '../render/VegPrepass';
@@ -107,6 +108,7 @@ export class GroundRing {
   private lastCamY = NaN;
   private lastCamZ = NaN;
   private lastPlanes = new Float32Array(24);
+  private cameraSignature = createCameraSignature();
   // motion cadence: re-cull at most every other frame while moving. The ring is
   // a camera-following clipmap; a 1-frame-stale visible set lags only the far
   // ring edge by one frame (≈6 cm at walk speed) — same imperceptible-latency
@@ -301,12 +303,22 @@ export class GroundRing {
     this.kernels = [clearK, grassK, debrisK, farK, indirectK];
   }
 
-  update(renderer: Renderer, camera: PerspectiveCamera): void {
+  update(renderer: Renderer, camera: PerspectiveCamera, diagnosticsVisible = false): void {
+    const cameraChanged = cameraSignatureChanged(camera, this.cameraSignature);
+    if (!cameraChanged) {
+      this.frame++;
+      if (diagnosticsVisible && this.frame % 90 === 30 && !this.reading) {
+        this.reading = true;
+        void this.readStats(renderer);
+      }
+      return;
+    }
     this.camU.value.copy(camera.position);
     this.projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this.frustum.setFromProjectionMatrix(this.projView);
     const arr = this.planesU.array as Vector4[];
     let changed =
+      cameraChanged ||
       camera.position.x !== this.lastCamX ||
       camera.position.y !== this.lastCamY ||
       camera.position.z !== this.lastCamZ;
@@ -340,7 +352,7 @@ export class GroundRing {
       this.framesSinceCull = 0;
     }
     this.frame++;
-    if (this.frame % 90 === 30 && !this.reading) {
+    if (diagnosticsVisible && this.frame % 90 === 30 && !this.reading) {
       this.reading = true;
       void this.readStats(renderer);
     }
