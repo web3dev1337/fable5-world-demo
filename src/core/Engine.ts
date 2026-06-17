@@ -36,7 +36,10 @@ export class Engine {
 
   private updateFns: UpdateFn[] = [];
   private lastT: number | null = null;
-  private frameMsRing: number[] = [];
+  private frameMsRing = new Float32Array(P95_WINDOW);
+  private frameMsScratch = new Float32Array(P95_WINDOW);
+  private frameMsIndex = 0;
+  private frameMsCount = 0;
   private fpsEma = 0;
   private frameCounter = 0;
   private settleWaiters: { frames: number; resolve: () => void }[] = [];
@@ -191,10 +194,17 @@ export class Engine {
   private collectStats(rawDt: number): void {
     const s = this.stats;
     const ms = rawDt * 1000;
-    this.frameMsRing.push(ms);
-    if (this.frameMsRing.length > P95_WINDOW) this.frameMsRing.shift();
-    const sorted = [...this.frameMsRing].sort((a, b) => a - b);
-    const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] ?? ms;
+    this.frameMsRing[this.frameMsIndex] = ms;
+    this.frameMsIndex = (this.frameMsIndex + 1) % P95_WINDOW;
+    this.frameMsCount = Math.min(P95_WINDOW, this.frameMsCount + 1);
+    for (let i = 0; i < this.frameMsCount; i++) {
+      this.frameMsScratch[i] = this.frameMsRing[i] ?? ms;
+    }
+    this.frameMsScratch.subarray(0, this.frameMsCount).sort();
+    const p95 =
+      this.frameMsScratch[
+        Math.min(this.frameMsCount - 1, Math.floor(this.frameMsCount * 0.95))
+      ] ?? ms;
     const fpsNow = rawDt > 0 ? 1 / rawDt : 0;
     this.fpsEma = this.fpsEma === 0 ? fpsNow : this.fpsEma * 0.95 + fpsNow * 0.05;
 
